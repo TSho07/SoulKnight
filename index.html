@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Hiệp Sĩ Linh Hồn - Co-op 4 Người (Soul Knight Web)</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:ital,wght@0,500;0,600;0,700;1,700&family=VT323&display=swap" rel="stylesheet">
     <style>
@@ -276,7 +277,7 @@
                 <div class="flex items-center gap-2 bg-slate-950/90 px-3 py-2 rounded-xl border border-slate-800 w-full md:w-auto justify-between md:justify-end">
                     <div class="flex items-center gap-2">
                         <span id="netStatusDot" class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
-                        <span id="netStatusText" class="text-xs font-semibold text-slate-300">Máy Chủ Wi-Fi / Cloud Sẵn Sàng</span>
+                        <span id="netStatusText" class="text-xs font-semibold text-slate-300">WebRTC P2P (GitHub.io) Sẵn Sàng</span>
                     </div>
                     <span id="userUidBadge" class="text-[10px] font-mono text-slate-500 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">ID: ...</span>
                 </div>
@@ -325,9 +326,14 @@
                             <h2 class="text-sm font-extrabold uppercase tracking-wider text-cyan-400 flex items-center gap-1.5">
                                 <i class="fa-solid fa-wifi"></i> Phòng Tổ Đội 4 Người
                             </h2>
-                            <span id="roomCodeDisplay" class="px-2.5 py-0.5 rounded-lg bg-indigo-950 border border-indigo-500/50 text-indigo-300 font-mono font-bold text-xs">
-                                CHƯA VÀO PHÒNG
-                            </span>
+                            <div class="flex items-center gap-1.5">
+                                <span id="roomCodeDisplay" class="px-2.5 py-0.5 rounded-lg bg-indigo-950 border border-indigo-500/50 text-indigo-300 font-mono font-bold text-xs">
+                                    CHƯA VÀO PHÒNG
+                                </span>
+                                <button id="btnCopyInvite" onclick="window.gameApp.copyRoomInvite()" title="Copy Link mời bạn bè" class="hidden px-2 py-0.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/50 text-amber-300 text-xs font-bold flex items-center gap-1">
+                                    <i class="fa-solid fa-copy"></i> Copy Link
+                                </button>
+                            </div>
                         </div>
 
                         <!-- Create / Join Room Controls -->
@@ -345,7 +351,7 @@
                             </div>
                             <p class="text-[11px] text-slate-400 leading-relaxed">
                                 <i class="fa-solid fa-circle-info text-cyan-400 mr-1"></i>
-                                Mẹo: Tạo phòng để lấy <strong>Mã 6 Ký Tự</strong>. Bạn bè trên điện thoại/máy tính khác (hoặc tab khác) nhập mã này để chiến cùng nhau thời gian thực!
+                                Mẹo: Bấm <strong>Tạo Phòng Mới</strong> để lấy <strong>Mã 6 Ký Tự</strong> (hoặc bấm <strong>Copy Link</strong> gửi qua Zalo/Messenger). Bạn bè trên điện thoại/máy tính khác mở trên <code>github.io</code> nhập mã là kết nối P2P trực tiếp!
                             </p>
                         </div>
 
@@ -732,7 +738,17 @@
                 this.selectedClass = 'knight';
                 this.fillWithBots = true;
 
-                // Firebase + Local BroadcastChannel Hybrid Sync
+                // WebRTC P2P (PeerJS) + BroadcastChannel + Firebase Hybrid Sync
+                this.peer = null;
+                this.peerConnections = {}; // Map of peerId -> DataConnection (used by Host)
+                this.hostConn = null;      // DataConnection to Host (used by Client)
+                this.peerPrefix = 'sk-github-io-v1-';
+                this.iceServers = [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' },
+                    { urls: 'stun:stun2.l.google.com:19302' }
+                ];
+
                 this.db = null;
                 this.auth = null;
                 this.firebaseUser = null;
@@ -787,12 +803,14 @@
             }
 
             // ------------------------------------------------------------------------
-            // FIREBASE & MULTI-TAB / WI-FI SYNC SETUP
+            // WEBRTC P2P (PEERJS) + BROADCASTCHANNEL + FIREBASE SYNC SETUP
             // ------------------------------------------------------------------------
             async initFirebaseAndLocalChannel() {
                 if (this.bc) {
-                    this.bc.onmessage = (ev) => this.handleBroadcastMessage(ev.data);
+                    this.bc.onmessage = (ev) => this.handleNetworkMessage(ev.data, null);
                 }
+
+                document.getElementById('userUidBadge').textContent = `ID: ${this.localId}`;
 
                 try {
                     if (typeof __firebase_config !== 'undefined' && __firebase_config) {
@@ -801,7 +819,6 @@
                         this.auth = getAuth(app);
                         this.db = getFirestore(app);
 
-                        // RULE 3: Authenticate FIRST before any Firestore operation
                         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                             await signInWithCustomToken(this.auth, __initial_auth_token);
                         } else {
@@ -813,17 +830,29 @@
                             if (user) {
                                 this.localId = user.uid;
                                 document.getElementById('userUidBadge').textContent = `ID: ${user.uid}`;
-                                document.getElementById('netStatusText').textContent = 'Đã kết nối Cloud Wi-Fi';
                                 this.renderLobbySlots();
                             }
                         });
-                    } else {
-                        document.getElementById('userUidBadge').textContent = `ID: ${this.localId}`;
                     }
                 } catch (err) {
-                    console.warn("Chạy ở chế độ LAN / BroadcastChannel:", err);
-                    document.getElementById('userUidBadge').textContent = `ID: ${this.localId}`;
+                    console.warn("Chạy ở chế độ WebRTC P2P / BroadcastChannel:", err);
                 }
+
+                // Auto-check URL ?room=CODE for 1-click invite links on github.io
+                const params = new URLSearchParams(window.location.search);
+                const urlRoom = params.get('room');
+                if (urlRoom && urlRoom.trim().length >= 4) {
+                    const cleanCode = urlRoom.trim().toUpperCase().substring(0, 6);
+                    document.getElementById('inputRoomCode').value = cleanCode;
+                    setTimeout(() => this.joinOnlineRoom(), 400);
+                }
+            }
+
+            setNetStatus(text, colorClass = 'bg-emerald-400') {
+                const dot = document.getElementById('netStatusDot');
+                const txt = document.getElementById('netStatusText');
+                if (dot) dot.className = `w-2.5 h-2.5 rounded-full ${colorClass}`;
+                if (txt) txt.textContent = text;
             }
 
             showLobbyToast(msg) {
@@ -832,7 +861,59 @@
                 el.textContent = msg;
                 el.classList.remove('hidden');
                 clearTimeout(this._toastTimer);
-                this._toastTimer = setTimeout(() => el.classList.add('hidden'), 4000);
+                this._toastTimer = setTimeout(() => el.classList.add('hidden'), 4500);
+            }
+
+            copyRoomInvite() {
+                if (!this.roomCode) return;
+                const url = new URL(window.location.href);
+                url.searchParams.set('room', this.roomCode);
+                const inviteLink = url.toString();
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(inviteLink).then(() => {
+                        this.showLobbyToast(`Đã copy link mời Phòng ${this.roomCode}! Gửi cho bạn bè để vào ngay.`);
+                    }).catch(() => {
+                        this.showLobbyToast(`Mã phòng của bạn: ${this.roomCode}`);
+                    });
+                } else {
+                    this.showLobbyToast(`Mã phòng của bạn: ${this.roomCode}`);
+                }
+            }
+
+            cleanupPeer() {
+                if (this.hostConn) {
+                    try { this.hostConn.close(); } catch (e) {}
+                    this.hostConn = null;
+                }
+                Object.values(this.peerConnections || {}).forEach(c => {
+                    try { c.close(); } catch (e) {}
+                });
+                this.peerConnections = {};
+                if (this.peer) {
+                    try { this.peer.destroy(); } catch (e) {}
+                    this.peer = null;
+                }
+            }
+
+            sendNetPacket(packet, excludePeerId = null) {
+                if (!this.roomCode) return;
+                packet.roomCode = this.roomCode;
+
+                // 1. Send via WebRTC P2P (PeerJS)
+                if (this.isHost) {
+                    Object.entries(this.peerConnections).forEach(([peerId, conn]) => {
+                        if (peerId !== excludePeerId && conn && conn.open) {
+                            try { conn.send(packet); } catch (e) {}
+                        }
+                    });
+                } else if (this.hostConn && this.hostConn.open) {
+                    try { this.hostConn.send(packet); } catch (e) {}
+                }
+
+                // 2. Send via Local BroadcastChannel (for multi-tab testing on same PC)
+                if (this.bc) {
+                    try { this.bc.postMessage(packet); } catch (e) {}
+                }
             }
 
             async createOnlineRoom() {
@@ -845,6 +926,14 @@
                 document.getElementById('roomCodeDisplay').textContent = `PHÒNG: ${code}`;
                 document.getElementById('inputRoomCode').value = code;
                 document.getElementById('hudRoomCodeBadge').textContent = `PHÒNG: ${code}`;
+                document.getElementById('btnCopyInvite').classList.remove('hidden');
+
+                // Update URL query string without reloading so user can copy address bar too
+                try {
+                    const url = new URL(window.location.href);
+                    url.searchParams.set('room', code);
+                    window.history.replaceState({}, '', url.toString());
+                } catch (e) {}
 
                 const initialMembers = {};
                 initialMembers[this.localId] = {
@@ -857,9 +946,38 @@
 
                 this.lobbyMembers = initialMembers;
                 this.renderLobbySlots();
-                this.showLobbyToast(`Đã tạo phòng ${code}! Hãy gửi mã này cho bạn bè cùng vào.`);
 
-                // Save to Firestore following RULE 1 & RULE 3
+                // Initialize PeerJS Host with deterministic room ID
+                if (typeof Peer !== 'undefined') {
+                    this.cleanupPeer();
+                    this.setNetStatus(`Đang mở phòng P2P ${code}...`, 'bg-amber-400 animate-ping');
+                    const hostPeerId = this.peerPrefix + code;
+                    this.peer = new Peer(hostPeerId, {
+                        config: { iceServers: this.iceServers }
+                    });
+
+                    this.peer.on('open', () => {
+                        this.setNetStatus(`Host P2P Sẵn Sàng (Phòng: ${code})`, 'bg-emerald-400');
+                        this.showLobbyToast(`Đã mở phòng Online ${code}! Gửi mã hoặc bấm "Copy Link" cho bạn bè.`);
+                    });
+
+                    this.peer.on('connection', (conn) => {
+                        this.setupHostClientConnection(conn);
+                    });
+
+                    this.peer.on('error', (err) => {
+                        console.warn('PeerJS Host Error:', err);
+                        if (err.type === 'unavailable-id') {
+                            this.createOnlineRoom();
+                        } else {
+                            this.setNetStatus('Chế độ Wi-Fi / Nội bộ sẵn sàng', 'bg-amber-400');
+                        }
+                    });
+                } else {
+                    this.showLobbyToast(`Đã tạo phòng ${code}! Hãy gửi mã này cho bạn bè cùng vào.`);
+                }
+
+                // Optional Firestore backup if configured
                 if (this.db && this.firebaseUser) {
                     try {
                         const roomRef = doc(this.db, 'artifacts', this.appId, 'public', 'data', 'soulknight_rooms', code);
@@ -874,14 +992,46 @@
                             updatedAt: Date.now()
                         });
                         this.subscribeToRoom(code);
-                    } catch (e) {
-                        console.warn("Firestore room create fallback:", e);
-                    }
+                    } catch (e) {}
                 }
 
-                if (this.bc) {
-                    this.bc.postMessage({ type: 'ROOM_UPDATE', roomCode: code, members: initialMembers, fillWithBots: this.fillWithBots });
-                }
+                this.sendNetPacket({ type: 'ROOM_UPDATE', members: initialMembers, fillWithBots: this.fillWithBots });
+            }
+
+            setupHostClientConnection(conn) {
+                conn.on('open', () => {
+                    this.peerConnections[conn.peer] = conn;
+                    conn.send({
+                        type: 'ROOM_UPDATE',
+                        roomCode: this.roomCode,
+                        members: this.lobbyMembers,
+                        fillWithBots: this.fillWithBots
+                    });
+                });
+
+                conn.on('data', (data) => {
+                    if (data && data.member && data.member.id) {
+                        conn._memberId = data.member.id;
+                    } else if (data && data.senderId) {
+                        conn._memberId = data.senderId;
+                    }
+                    this.handleNetworkMessage(data, conn);
+                });
+
+                conn.on('close', () => {
+                    delete this.peerConnections[conn.peer];
+                    if (conn._memberId && this.lobbyMembers && this.lobbyMembers[conn._memberId]) {
+                        const leftName = this.lobbyMembers[conn._memberId].name;
+                        delete this.lobbyMembers[conn._memberId];
+                        this.renderLobbySlots();
+                        this.showLobbyToast(`${leftName} đã rời phòng.`);
+                        this.sendNetPacket({
+                            type: 'ROOM_UPDATE',
+                            members: this.lobbyMembers,
+                            fillWithBots: this.fillWithBots
+                        });
+                    }
+                });
             }
 
             async joinOnlineRoom() {
@@ -894,6 +1044,13 @@
                 this.isHost = false;
                 document.getElementById('roomCodeDisplay').textContent = `PHÒNG: ${input}`;
                 document.getElementById('hudRoomCodeBadge').textContent = `PHÒNG: ${input}`;
+                document.getElementById('btnCopyInvite').classList.remove('hidden');
+
+                try {
+                    const url = new URL(window.location.href);
+                    url.searchParams.set('room', input);
+                    window.history.replaceState({}, '', url.toString());
+                } catch (e) {}
 
                 const myMember = {
                     id: this.localId,
@@ -902,6 +1059,67 @@
                     isHost: false,
                     updatedAt: Date.now()
                 };
+
+                this.lobbyMembers = { [this.localId]: myMember };
+                this.renderLobbySlots();
+
+                // Connect via PeerJS P2P to Host
+                if (typeof Peer !== 'undefined') {
+                    this.cleanupPeer();
+                    this.setNetStatus(`Đang kết nối tới phòng ${input}...`, 'bg-amber-400 animate-ping');
+                    this.showLobbyToast(`Đang kết nối P2P tới phòng ${input}...`);
+
+                    this.peer = new Peer(undefined, {
+                        config: { iceServers: this.iceServers }
+                    });
+
+                    this.peer.on('open', () => {
+                        const hostPeerId = this.peerPrefix + input;
+                        const conn = this.peer.connect(hostPeerId, { reliable: true });
+                        this.hostConn = conn;
+
+                        const connectTimeout = setTimeout(() => {
+                            if (!conn.open) {
+                                this.setNetStatus('Không tìm thấy Host - Đang thử lại...', 'bg-rose-400');
+                                this.showLobbyToast(`Chưa thấy phản hồi từ phòng ${input}. Hãy kiểm tra lại Mã Phòng hoặc đảm bảo Chủ Phòng đang mở trang!`);
+                            }
+                        }, 7000);
+
+                        conn.on('open', () => {
+                            clearTimeout(connectTimeout);
+                            this.setNetStatus(`Đã kết nối P2P Phòng ${input}`, 'bg-emerald-400');
+                            this.showLobbyToast(`Đã vào phòng ${input} thành công! Chờ Chủ Phòng bắt đầu hoặc chọn Anh Hùng.`);
+                            conn.send({
+                                type: 'JOIN_REQUEST',
+                                roomCode: input,
+                                member: {
+                                    id: this.localId,
+                                    name: this.playerName,
+                                    heroClass: this.selectedClass,
+                                    isHost: false,
+                                    updatedAt: Date.now()
+                                }
+                            });
+                        });
+
+                        conn.on('data', (data) => {
+                            this.handleNetworkMessage(data, conn);
+                        });
+
+                        conn.on('close', () => {
+                            this.setNetStatus('Mất kết nối với Chủ Phòng', 'bg-rose-500');
+                            this.showLobbyToast('Kết nối với Chủ Phòng đã đóng.');
+                        });
+                    });
+
+                    this.peer.on('error', (err) => {
+                        console.warn('PeerJS Client Error:', err);
+                        if (err.type === 'peer-unavailable') {
+                            this.setNetStatus(`Phòng ${input} không tồn tại`, 'bg-rose-500');
+                            this.showLobbyToast(`Không tìm thấy phòng ${input}! Hãy chắc chắn Chủ Phòng đã bấm "Tạo Phòng Mới".`);
+                        }
+                    });
+                }
 
                 if (this.db && this.firebaseUser) {
                     try {
@@ -917,34 +1135,13 @@
                                 updatedAt: Date.now()
                             });
                             this.subscribeToRoom(input);
-                            this.showLobbyToast(`Đã tham gia phòng ${input} thành công!`);
-                        } else {
-                            // Create if not existing yet so friends can connect seamlessly
-                            const members = { [this.localId]: { ...myMember, isHost: true } };
-                            this.isHost = true;
-                            this.lobbyMembers = members;
-                            await setDoc(roomRef, {
-                                roomCode: input,
-                                hostId: this.localId,
-                                status: 'lobby',
-                                fillWithBots: this.fillWithBots,
-                                floorLevel: 1,
-                                membersJson: JSON.stringify(members),
-                                gameStateJson: '',
-                                updatedAt: Date.now()
-                            });
-                            this.subscribeToRoom(input);
-                            this.showLobbyToast(`Đã mở phòng ${input} và sẵn sàng đón đồng đội!`);
                         }
-                    } catch (e) {
-                        console.warn("Firestore join fallback:", e);
-                    }
+                    } catch (e) {}
                 }
 
                 if (this.bc) {
                     this.bc.postMessage({ type: 'JOIN_REQUEST', roomCode: input, member: myMember });
                 }
-                this.renderLobbySlots();
             }
 
             subscribeToRoom(code) {
@@ -963,11 +1160,9 @@
                             this.renderLobbySlots();
                         } catch (e) {}
                     }
-                    // If Host started the game, clients launch into game automatically
                     if (data.status === 'playing' && !this.inGame && !this.isHost) {
-                        this.launchExpedition(false);
+                        this.launchExpedition(true);
                     }
-                    // Sync live positions & world state
                     if (data.gameStateJson && this.inGame) {
                         try {
                             const remoteState = JSON.parse(data.gameStateJson);
@@ -979,79 +1174,246 @@
                 });
             }
 
-            handleBroadcastMessage(msg) {
+            handleNetworkMessage(msg, sourceConn = null) {
                 if (!msg || !msg.roomCode || msg.roomCode !== this.roomCode) return;
+
                 if (msg.type === 'JOIN_REQUEST' && this.isHost) {
                     this.lobbyMembers = this.lobbyMembers || {};
+                    const count = Object.keys(this.lobbyMembers).length;
+                    if (count >= 4 && !this.lobbyMembers[msg.member.id]) {
+                        if (sourceConn && sourceConn.open) {
+                            sourceConn.send({ type: 'ROOM_FULL', roomCode: this.roomCode });
+                        }
+                        return;
+                    }
                     this.lobbyMembers[msg.member.id] = msg.member;
+                    this.sfx.play('pickup');
+                    this.showLobbyToast(`${msg.member.name} đã tham gia đội!`);
                     this.renderLobbySlots();
-                    this.bc.postMessage({
+                    this.sendNetPacket({
                         type: 'ROOM_UPDATE',
-                        roomCode: this.roomCode,
                         members: this.lobbyMembers,
                         fillWithBots: this.fillWithBots
                     });
+                    if (this.inGame && sourceConn && sourceConn.open) {
+                        this.spawnNewMidgamePlayer(msg.member);
+                        sourceConn.send({
+                            type: 'START_GAME',
+                            roomCode: this.roomCode,
+                            members: this.lobbyMembers,
+                            fillWithBots: this.fillWithBots,
+                            floorLevel: this.floorLevel,
+                            crates: this.crates,
+                            chests: this.chests
+                        });
+                    }
+                } else if (msg.type === 'MEMBER_UPDATE' && this.isHost) {
+                    if (msg.member && msg.member.id) {
+                        this.lobbyMembers = this.lobbyMembers || {};
+                        this.lobbyMembers[msg.member.id] = msg.member;
+                        this.renderLobbySlots();
+                        this.sendNetPacket({
+                            type: 'ROOM_UPDATE',
+                            members: this.lobbyMembers,
+                            fillWithBots: this.fillWithBots
+                        });
+                    }
                 } else if (msg.type === 'ROOM_UPDATE') {
                     this.lobbyMembers = msg.members;
                     this.fillWithBots = msg.fillWithBots;
+                    document.getElementById('chkFillBots').checked = this.fillWithBots;
                     this.renderLobbySlots();
-                } else if (msg.type === 'START_GAME' && !this.inGame) {
-                    this.launchExpedition(false);
+                } else if (msg.type === 'START_GAME') {
+                    if (msg.members) this.lobbyMembers = msg.members;
+                    if (typeof msg.fillWithBots === 'boolean') this.fillWithBots = msg.fillWithBots;
+                    if (msg.floorLevel) this.floorLevel = msg.floorLevel;
+                    this.launchExpedition(true, msg.crates, msg.chests);
                 } else if (msg.type === 'STATE_SYNC' && this.inGame) {
                     this.applyRemoteState(msg.state);
+                    if (this.isHost && sourceConn) {
+                        this.sendNetPacket(msg, sourceConn.peer);
+                    }
+                } else if (msg.type === 'EVENT_FIRE' && this.inGame) {
+                    if (msg.senderId !== this.localId) {
+                        this.applyRemoteFireEvent(msg);
+                        if (this.isHost && sourceConn) this.sendNetPacket(msg, sourceConn.peer);
+                    }
+                } else if (msg.type === 'EVENT_SKILL' && this.inGame) {
+                    if (msg.senderId !== this.localId) {
+                        const hero = this.players[msg.heroId];
+                        if (hero) {
+                            hero.aimAngle = msg.aimAngle ?? hero.aimAngle;
+                            this.triggerHeroSkill(hero, true);
+                        }
+                        if (this.isHost && sourceConn) this.sendNetPacket(msg, sourceConn.peer);
+                    }
+                } else if (msg.type === 'EVENT_ENEMY_DAMAGE' && this.inGame) {
+                    if (this.isHost) {
+                        const enemy = this.enemies.find(e => e.id === msg.enemyId);
+                        if (enemy) {
+                            this.damageEnemy(enemy, msg.amount, this.players[msg.attackerId], true);
+                        }
+                    }
+                } else if (msg.type === 'EVENT_OPEN_CHEST' && this.inGame) {
+                    if (msg.senderId !== this.localId) {
+                        const chest = this.chests.find(c => c.id === msg.chestId);
+                        if (chest && !chest.opened) {
+                            chest.opened = true;
+                            this.sfx.play('pickup');
+                            this.spawnBurstParticles(chest.x, chest.y, '#fbbf24', 22);
+                            if (msg.loots) {
+                                msg.loots.forEach(l => this.groundLoots.push(l));
+                            }
+                        }
+                        if (this.isHost && sourceConn) this.sendNetPacket(msg, sourceConn.peer);
+                    }
+                } else if (msg.type === 'EVENT_PICKUP_LOOT' && this.inGame) {
+                    if (msg.senderId !== this.localId) {
+                        const hero = this.players[msg.heroId];
+                        if (hero && this.groundLoots[msg.lootIndex]) {
+                            this.pickupLootItem(hero, this.groundLoots[msg.lootIndex], msg.lootIndex, true);
+                        }
+                        if (this.isHost && sourceConn) this.sendNetPacket(msg, sourceConn.peer);
+                    }
+                } else if (msg.type === 'EVENT_REVIVE' && this.inGame) {
+                    if (msg.senderId !== this.localId) {
+                        const target = this.players[msg.targetId];
+                        if (target) {
+                            target.downed = false;
+                            target.hp = Math.ceil(target.maxHp * 0.5);
+                            target.armor = target.maxArmor;
+                            this.sfx.play('skill');
+                            this.addFloatingText(target.x, target.y - 30, 'ĐÃ CỨU SỐNG!', '#4ade80');
+                            this.spawnBurstParticles(target.x, target.y, '#4ade80', 20);
+                        }
+                        if (this.isHost && sourceConn) this.sendNetPacket(msg, sourceConn.peer);
+                    }
+                } else if (msg.type === 'EVENT_NEXT_FLOOR') {
+                    if (msg.senderId !== this.localId) {
+                        if (msg.victory) {
+                            this.showEndScreen(true);
+                        } else {
+                            document.getElementById('buffModal').classList.add('hidden');
+                            this.floorLevel = msg.floorLevel;
+                            this.generateDungeonFloor(this.floorLevel, msg.crates, msg.chests);
+                            this.inGame = true;
+                            this.showLobbyToast(`Tổ đội đã tiến lên Tầng ${this.floorLevel}-1!`);
+                        }
+                    }
                 }
+            }
+
+            spawnNewMidgamePlayer(member) {
+                if (this.players[member.id]) return;
+                const cls = HERO_CLASSES[member.heroClass] || HERO_CLASSES.knight;
+                const me = this.players[this.localId];
+                const sx = me ? me.x : 0;
+                const sy = me ? me.y : 0;
+                this.players[member.id] = {
+                    id: member.id,
+                    name: member.name,
+                    heroClass: cls.id,
+                    isBot: false,
+                    isLocal: false,
+                    x: sx,
+                    y: sy,
+                    targetX: sx,
+                    targetY: sy,
+                    vx: 0,
+                    vy: 0,
+                    radius: 18,
+                    hp: cls.hp,
+                    maxHp: cls.hp,
+                    armor: cls.armor,
+                    maxArmor: cls.armor,
+                    energy: cls.energy,
+                    maxEnergy: cls.energy,
+                    speed: cls.speed,
+                    color: cls.color,
+                    visorColor: cls.visorColor,
+                    capeColor: cls.capeColor,
+                    weapons: [cls.starterWeapon, null],
+                    activeWeaponIdx: 0,
+                    aimAngle: 0,
+                    fireCooldown: 0,
+                    skillCooldown: 0,
+                    maxSkillCd: cls.skillCd,
+                    skillActiveTimer: 0,
+                    lastDamageTakenTime: 0,
+                    armorRegenAccum: 0,
+                    downed: false,
+                    reviveProgress: 0,
+                    dashTimer: 0,
+                    dashVx: 0,
+                    dashVy: 0,
+                    meleeSwingTimer: 0,
+                    meleeSwingDir: 1
+                };
             }
 
             broadcastNetworkState() {
                 if (!this.roomCode || !this.inGame) return;
                 const now = performance.now();
-                if (now - this.lastSyncSent < 120) return; // ~8.5 syncs/sec for smooth bandwidth
+                if (now - this.lastSyncSent < 45) return; // ~22 syncs/sec via WebRTC DataChannel
                 this.lastSyncSent = now;
 
                 const myHero = this.players[this.localId];
                 if (!myHero) return;
 
+                const serializeHero = (h) => ({
+                    id: h.id,
+                    name: h.name,
+                    heroClass: h.heroClass,
+                    isBot: h.isBot,
+                    x: Math.round(h.x),
+                    y: Math.round(h.y),
+                    aimAngle: Number(h.aimAngle.toFixed(2)),
+                    hp: h.hp,
+                    maxHp: h.maxHp,
+                    armor: h.armor,
+                    maxArmor: h.maxArmor,
+                    weaponId: h.weapons[h.activeWeaponIdx],
+                    downed: h.downed,
+                    skillActiveTimer: Number((h.skillActiveTimer || 0).toFixed(2))
+                });
+
                 const payload = {
                     senderId: this.localId,
                     isHost: this.isHost,
-                    hero: {
-                        id: myHero.id,
-                        name: myHero.name,
-                        heroClass: myHero.heroClass,
-                        x: Math.round(myHero.x),
-                        y: Math.round(myHero.y),
-                        aimAngle: Number(myHero.aimAngle.toFixed(2)),
-                        hp: myHero.hp,
-                        maxHp: myHero.maxHp,
-                        armor: myHero.armor,
-                        maxArmor: myHero.maxArmor,
-                        weaponId: myHero.weapons[myHero.activeWeaponIdx],
-                        downed: myHero.downed,
-                        skillActiveTimer: myHero.skillActiveTimer
-                    }
+                    hero: serializeHero(myHero)
                 };
 
                 if (this.isHost) {
+                    payload.bots = Object.values(this.players)
+                        .filter(p => p.isBot)
+                        .map(serializeHero);
                     payload.currentRoomIndex = this.currentRoomIndex;
                     payload.gatesLocked = this.gatesLocked;
                     payload.teamCoins = this.teamCoins;
-                    payload.enemies = this.enemies.slice(0, 20).map(e => ({
+                    payload.totalKills = this.totalKills;
+                    payload.roomsCleared = this.rooms.map(r => ({ cleared: r.cleared, visited: r.visited, wave: r.wave }));
+                    payload.portal = this.portal ? { x: this.portal.x, y: this.portal.y } : null;
+                    payload.enemies = this.enemies.slice(0, 30).map(e => ({
                         id: e.id,
                         type: e.type,
+                        name: e.name,
+                        roomIndex: e.roomIndex,
                         x: Math.round(e.x),
                         y: Math.round(e.y),
+                        radius: e.radius,
+                        color: e.color,
                         hp: e.hp,
                         maxHp: e.maxHp,
-                        isBoss: e.isBoss,
-                        name: e.name
+                        stunTimer: e.stunTimer,
+                        chillTimer: e.chillTimer,
+                        isBoss: e.isBoss
                     }));
                 }
 
-                if (this.bc) {
-                    this.bc.postMessage({ type: 'STATE_SYNC', roomCode: this.roomCode, state: payload });
-                }
+                this.sendNetPacket({ type: 'STATE_SYNC', state: payload });
 
-                if (this.db && this.firebaseUser) {
+                if (this.db && this.firebaseUser && (!this._lastFirestoreSync || now - this._lastFirestoreSync > 400)) {
+                    this._lastFirestoreSync = now;
                     const roomRef = doc(this.db, 'artifacts', this.appId, 'public', 'data', 'soulknight_rooms', this.roomCode);
                     updateDoc(roomRef, {
                         gameStateJson: JSON.stringify(payload),
@@ -1062,16 +1424,109 @@
 
             applyRemoteState(state) {
                 if (!state || state.senderId === this.localId) return;
-                const h = state.hero;
-                if (h && this.players[h.id]) {
+
+                const updateHeroEntity = (h) => {
+                    if (!h || h.id === this.localId) return;
+                    if (!this.players[h.id]) {
+                        this.spawnNewMidgamePlayer({ id: h.id, name: h.name, heroClass: h.heroClass });
+                        if (this.players[h.id]) this.players[h.id].isBot = !!h.isBot;
+                    }
                     const target = this.players[h.id];
-                    target.targetX = h.x;
-                    target.targetY = h.y;
-                    target.aimAngle = h.aimAngle;
-                    target.hp = h.hp;
-                    target.armor = h.armor;
-                    target.downed = h.downed;
-                    target.weapons[target.activeWeaponIdx] = h.weaponId;
+                    if (target) {
+                        target.name = h.name || target.name;
+                        target.targetX = h.x;
+                        target.targetY = h.y;
+                        if (Math.hypot(target.x - h.x, target.y - h.y) > 350) {
+                            target.x = h.x;
+                            target.y = h.y;
+                        }
+                        target.aimAngle = h.aimAngle;
+                        target.hp = h.hp;
+                        target.maxHp = h.maxHp || target.maxHp;
+                        target.armor = h.armor;
+                        target.maxArmor = h.maxArmor || target.maxArmor;
+                        target.downed = h.downed;
+                        target.skillActiveTimer = h.skillActiveTimer || 0;
+                        if (h.weaponId) target.weapons[target.activeWeaponIdx] = h.weaponId;
+                    }
+                };
+
+                updateHeroEntity(state.hero);
+
+                if (state.isHost && !this.isHost) {
+                    if (Array.isArray(state.bots)) {
+                        state.bots.forEach(updateHeroEntity);
+                    }
+                    if (typeof state.currentRoomIndex === 'number') this.currentRoomIndex = state.currentRoomIndex;
+                    if (typeof state.gatesLocked === 'boolean') this.gatesLocked = state.gatesLocked;
+                    if (typeof state.teamCoins === 'number') this.teamCoins = state.teamCoins;
+                    if (typeof state.totalKills === 'number') this.totalKills = state.totalKills;
+
+                    if (Array.isArray(state.roomsCleared)) {
+                        state.roomsCleared.forEach((rc, idx) => {
+                            if (this.rooms[idx]) {
+                                this.rooms[idx].cleared = rc.cleared;
+                                this.rooms[idx].visited = rc.visited;
+                                this.rooms[idx].wave = rc.wave;
+                            }
+                        });
+                    }
+
+                    if (state.portal && !this.portal) {
+                        this.portal = { x: state.portal.x, y: state.portal.y, angle: 0 };
+                    } else if (!state.portal) {
+                        this.portal = null;
+                    }
+
+                    if (Array.isArray(state.enemies)) {
+                        const existingMap = {};
+                        this.enemies.forEach(e => { existingMap[e.id] = e; });
+                        this.enemies = state.enemies.map(re => {
+                            const prev = existingMap[re.id];
+                            if (prev) {
+                                prev.x += (re.x - prev.x) * 0.45;
+                                prev.y += (re.y - prev.y) * 0.45;
+                                prev.hp = re.hp;
+                                prev.maxHp = re.maxHp;
+                                prev.stunTimer = re.stunTimer || 0;
+                                prev.chillTimer = re.chillTimer || 0;
+                                return prev;
+                            }
+                            return {
+                                ...re,
+                                vx: 0,
+                                vy: 0,
+                                speed: 2.0,
+                                fireTimer: 1.0,
+                                fireRate: 1.4,
+                                stunTimer: re.stunTimer || 0,
+                                chillTimer: re.chillTimer || 0
+                            };
+                        });
+
+                        const boss = this.enemies.find(e => e.isBoss);
+                        const bossHud = document.getElementById('hudBossContainer');
+                        if (boss) {
+                            bossHud.classList.remove('hidden');
+                            document.getElementById('hudBossName').innerHTML = `<i class="fa-solid fa-skull text-red-400"></i> ${boss.name}`;
+                        } else {
+                            bossHud.classList.add('hidden');
+                        }
+                    }
+                }
+            }
+
+            applyRemoteFireEvent(msg) {
+                const hero = this.players[msg.heroId];
+                if (msg.isMelee) {
+                    this.sfx.play('sword');
+                    if (hero) {
+                        hero.meleeSwingTimer = 0.18;
+                        hero.meleeSwingDir *= -1;
+                    }
+                } else if (Array.isArray(msg.bullets)) {
+                    this.sfx.play(msg.weaponType === 'laser' ? 'laser' : 'shoot');
+                    msg.bullets.forEach(b => this.bullets.push(b));
                 }
             }
 
@@ -1155,13 +1610,30 @@
                     this.playerName = nameInput.value.trim();
                 }
                 if (!this.lobbyMembers) this.lobbyMembers = {};
-                this.lobbyMembers[this.localId] = {
+                const myMember = {
                     id: this.localId,
                     name: this.playerName,
                     heroClass: this.selectedClass,
-                    isHost: this.isHost
+                    isHost: this.isHost,
+                    updatedAt: Date.now()
                 };
+                this.lobbyMembers[this.localId] = myMember;
                 this.renderLobbySlots();
+
+                if (this.roomCode) {
+                    if (this.isHost) {
+                        this.sendNetPacket({
+                            type: 'ROOM_UPDATE',
+                            members: this.lobbyMembers,
+                            fillWithBots: this.fillWithBots
+                        });
+                    } else {
+                        this.sendNetPacket({
+                            type: 'MEMBER_UPDATE',
+                            member: myMember
+                        });
+                    }
+                }
 
                 if (this.roomCode && this.db && this.firebaseUser) {
                     const roomRef = doc(this.db, 'artifacts', this.appId, 'public', 'data', 'soulknight_rooms', this.roomCode);
@@ -1170,14 +1642,18 @@
                         updatedAt: Date.now()
                     }).catch(() => {});
                 }
-                if (this.roomCode && this.bc) {
-                    this.bc.postMessage({ type: 'ROOM_UPDATE', roomCode: this.roomCode, members: this.lobbyMembers, fillWithBots: this.fillWithBots });
-                }
             }
 
             toggleBotFill() {
                 this.fillWithBots = document.getElementById('chkFillBots').checked;
                 this.renderLobbySlots();
+                if (this.roomCode && this.isHost) {
+                    this.sendNetPacket({
+                        type: 'ROOM_UPDATE',
+                        members: this.lobbyMembers,
+                        fillWithBots: this.fillWithBots
+                    });
+                }
             }
 
             renderLobbySlots() {
@@ -1208,7 +1684,7 @@
                                     <div class="text-xs font-extrabold text-white flex items-center gap-1.5">
                                         ${realMember.name}
                                         ${isMe ? '<span class="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 rounded border border-amber-500/40">BẠN</span>' : ''}
-                                        ${slot === 0 ? '<span class="text-[10px] bg-indigo-500/20 text-indigo-300 px-1.5 rounded">CHỦ PHÒNG</span>' : ''}
+                                        ${realMember.isHost || slot === 0 ? '<span class="text-[10px] bg-indigo-500/20 text-indigo-300 px-1.5 rounded">CHỦ PHÒNG</span>' : ''}
                                     </div>
                                     <div class="text-[11px] text-slate-400">${cls.name} • Kỹ năng: ${cls.skillName}</div>
                                 </div>
@@ -1243,7 +1719,7 @@
                                 <div class="w-8 h-8 rounded-lg bg-slate-900 flex items-center justify-center">
                                     <i class="fa-solid fa-user-plus text-xs"></i>
                                 </div>
-                                <span class="text-xs">Đang chờ người chơi Wi-Fi vào slot #${slot + 1}...</span>
+                                <span class="text-xs">Đang chờ người chơi P2P vào slot #${slot + 1}...</span>
                             </div>
                         `;
                     }
@@ -1259,20 +1735,28 @@
 
             async startGameFromLobby() {
                 this.updateProfile();
+                this.launchExpedition(true);
+
+                if (this.roomCode && this.isHost) {
+                    this.sendNetPacket({
+                        type: 'START_GAME',
+                        members: this.lobbyMembers,
+                        fillWithBots: this.fillWithBots,
+                        floorLevel: this.floorLevel,
+                        crates: this.crates,
+                        chests: this.chests
+                    });
+                }
                 if (this.roomCode && this.db && this.firebaseUser && this.isHost) {
                     const roomRef = doc(this.db, 'artifacts', this.appId, 'public', 'data', 'soulknight_rooms', this.roomCode);
                     updateDoc(roomRef, { status: 'playing', updatedAt: Date.now() }).catch(() => {});
                 }
-                if (this.roomCode && this.bc) {
-                    this.bc.postMessage({ type: 'START_GAME', roomCode: this.roomCode });
-                }
-                this.launchExpedition(true);
             }
 
             // ------------------------------------------------------------------------
             // PROCEDURAL DUNGEON & SQUAD INITIALIZATION
             // ------------------------------------------------------------------------
-            launchExpedition(resetStats = true) {
+            launchExpedition(resetStats = true, syncedCrates = null, syncedChests = null) {
                 this.sfx.init();
                 this.sfx.play('skill');
                 document.getElementById('lobbyModal').classList.add('hidden');
@@ -1281,14 +1765,14 @@
                 document.getElementById('hudOverlay').classList.remove('hidden');
 
                 if (resetStats) {
-                    this.floorLevel = 1;
+                    if (!this.roomCode || this.isHost) this.floorLevel = 1;
                     this.totalKills = 0;
                     this.teamCoins = 0;
                     this.activeBuffs = new Set();
                     this.spawnSquadPlayers();
                 }
 
-                this.generateDungeonFloor(this.floorLevel);
+                this.generateDungeonFloor(this.floorLevel, syncedCrates, syncedChests);
                 this.inGame = true;
                 this.updateHud();
             }
@@ -1355,7 +1839,7 @@
                 }
             }
 
-            generateDungeonFloor(floor) {
+            generateDungeonFloor(floor, syncedCrates = null, syncedChests = null) {
                 this.enemies = [];
                 this.bullets = [];
                 this.particles = [];
@@ -1393,55 +1877,63 @@
                     p.armor = p.maxArmor;
                 });
 
-                // Spawn starter chest in Room 0 & Golden chest in Room 2
-                this.chests.push({
-                    id: 'chest_spawn',
-                    x: 0,
-                    y: -140,
-                    opened: false,
-                    tier: 'normal'
-                });
-                this.chests.push({
-                    id: 'chest_treasure',
-                    x: this.rooms[2].x,
-                    y: this.rooms[2].y,
-                    opened: false,
-                    tier: 'gold'
-                });
+                if (Array.isArray(syncedChests) && syncedChests.length > 0) {
+                    this.chests = syncedChests.map(c => ({ ...c }));
+                } else {
+                    // Spawn starter chest in Room 0 & Golden chest in Room 2
+                    this.chests.push({
+                        id: 'chest_spawn',
+                        x: 0,
+                        y: -140,
+                        opened: false,
+                        tier: 'normal'
+                    });
+                    this.chests.push({
+                        id: 'chest_treasure',
+                        x: this.rooms[2].x,
+                        y: this.rooms[2].y,
+                        opened: false,
+                        tier: 'gold'
+                    });
+                }
 
-                // Populate destructible crates, explosive barrels & stone pillars in Combat & Boss rooms
-                this.rooms.forEach(rm => {
-                    if (rm.type === 'combat' || rm.type === 'boss') {
-                        // 4 symmetrical stone pillars
-                        const offset = 210;
-                        const pillarCoords = [
-                            [rm.x - offset, rm.y - offset],
-                            [rm.x + offset, rm.y - offset],
-                            [rm.x - offset, rm.y + offset],
-                            [rm.x + offset, rm.y + offset]
-                        ];
-                        pillarCoords.forEach(([px, py]) => {
-                            this.crates.push({ x: px, y: py, size: 54, hp: 9999, indestructible: true, type: 'pillar' });
-                        });
+                if (Array.isArray(syncedCrates) && syncedCrates.length > 0) {
+                    this.crates = syncedCrates.map(c => ({ ...c }));
+                } else {
+                    // Populate destructible crates, explosive barrels & stone pillars in Combat & Boss rooms
+                    this.rooms.forEach(rm => {
+                        if (rm.type === 'combat' || rm.type === 'boss') {
+                            // 4 symmetrical stone pillars
+                            const offset = 210;
+                            const pillarCoords = [
+                                [rm.x - offset, rm.y - offset],
+                                [rm.x + offset, rm.y - offset],
+                                [rm.x - offset, rm.y + offset],
+                                [rm.x + offset, rm.y + offset]
+                            ];
+                            pillarCoords.forEach(([px, py]) => {
+                                this.crates.push({ x: px, y: py, size: 54, hp: 9999, indestructible: true, type: 'pillar' });
+                            });
 
-                        // Destructible wooden boxes & red explosive barrels
-                        for (let i = 0; i < 9; i++) {
-                            const cx = rm.x + (Math.random() - 0.5) * (this.roomSize - 240);
-                            const cy = rm.y + (Math.random() - 0.5) * (this.roomSize - 240);
-                            if (Math.hypot(cx - rm.x, cy - rm.y) > 90) {
-                                const isBarrel = Math.random() < 0.32;
-                                this.crates.push({
-                                    x: cx,
-                                    y: cy,
-                                    size: 38,
-                                    hp: isBarrel ? 18 : 25,
-                                    indestructible: false,
-                                    type: isBarrel ? 'barrel' : 'wood'
-                                });
+                            // Destructible wooden boxes & red explosive barrels
+                            for (let i = 0; i < 9; i++) {
+                                const cx = Math.round(rm.x + (Math.random() - 0.5) * (this.roomSize - 240));
+                                const cy = Math.round(rm.y + (Math.random() - 0.5) * (this.roomSize - 240));
+                                if (Math.hypot(cx - rm.x, cy - rm.y) > 90) {
+                                    const isBarrel = Math.random() < 0.32;
+                                    this.crates.push({
+                                        x: cx,
+                                        y: cy,
+                                        size: 38,
+                                        hp: isBarrel ? 18 : 25,
+                                        indestructible: false,
+                                        type: isBarrel ? 'barrel' : 'wood'
+                                    });
+                                }
                             }
                         }
-                    }
-                });
+                    });
+                }
 
                 document.getElementById('hudFloorText').textContent = `Tầng ${this.floorLevel}-1 • Hầm Ngục Tối`;
                 this.renderBuffHudIcons();
@@ -1562,13 +2054,22 @@
             useSkill() {
                 const me = this.players[this.localId];
                 if (!me || me.downed || me.skillCooldown > 0) return;
-                this.triggerHeroSkill(me);
+                this.triggerHeroSkill(me, false);
             }
 
-            triggerHeroSkill(hero) {
+            triggerHeroSkill(hero, isRemote = false) {
                 const hasteMult = this.activeBuffs?.has('haste') ? 0.75 : 1.0;
                 hero.skillCooldown = hero.maxSkillCd * hasteMult;
                 this.sfx.play('skill');
+
+                if (!isRemote && this.roomCode) {
+                    this.sendNetPacket({
+                        type: 'EVENT_SKILL',
+                        senderId: this.localId,
+                        heroId: hero.id,
+                        aimAngle: hero.aimAngle
+                    });
+                }
 
                 if (hero.heroClass === 'knight') {
                     // Dual Wield for 5 seconds
@@ -1637,7 +2138,6 @@
 
                 if (hero.fireCooldown > 0) return;
                 if (hero.energy < wep.cost) {
-                    // Fallback to free melee/weak shot if out of energy
                     if (wep.cost > 0) {
                         this.addFloatingText(hero.x, hero.y - 25, 'Hết Mana!', '#38bdf8');
                         hero.fireCooldown = 0.35;
@@ -1650,6 +2150,7 @@
 
                 const shots = isDual ? 2 : 1;
                 const dmgBonus = this.activeBuffs?.has('bounce') ? 1.2 : 1.0;
+                const spawnedBullets = [];
 
                 for (let s = 0; s < shots; s++) {
                     const lateralOffset = shots === 2 ? (s === 0 ? -9 : 9) : 0;
@@ -1680,11 +2181,11 @@
                         this.sfx.play(wep.type === 'laser' ? 'laser' : 'shoot');
                         for (let i = 0; i < wep.count; i++) {
                             const spreadAngle = hero.aimAngle + (Math.random() - 0.5) * wep.spread;
-                            this.bullets.push({
-                                x: spawnX + Math.cos(spreadAngle) * 18,
-                                y: spawnY + Math.sin(spreadAngle) * 18,
-                                vx: Math.cos(spreadAngle) * wep.speed,
-                                vy: Math.sin(spreadAngle) * wep.speed,
+                            const bObj = {
+                                x: Math.round(spawnX + Math.cos(spreadAngle) * 18),
+                                y: Math.round(spawnY + Math.sin(spreadAngle) * 18),
+                                vx: Number((Math.cos(spreadAngle) * wep.speed).toFixed(2)),
+                                vy: Number((Math.sin(spreadAngle) * wep.speed).toFixed(2)),
                                 radius: wep.size,
                                 color: wep.color,
                                 damage: Math.round(wep.damage * dmgBonus),
@@ -1694,9 +2195,22 @@
                                 pierce: !!wep.pierce,
                                 bounces: this.activeBuffs?.has('bounce') ? 1 : 0,
                                 life: wep.type === 'laser' ? 0.45 : 2.2
-                            });
+                            };
+                            this.bullets.push(bObj);
+                            spawnedBullets.push(bObj);
                         }
                     }
+                }
+
+                if (this.roomCode && (hero.isLocal || (this.isHost && hero.isBot))) {
+                    this.sendNetPacket({
+                        type: 'EVENT_FIRE',
+                        senderId: this.localId,
+                        heroId: hero.id,
+                        isMelee: wep.type === 'melee',
+                        weaponType: wep.type,
+                        bullets: spawnedBullets
+                    });
                 }
             }
 
@@ -1713,6 +2227,13 @@
                         this.sfx.play('skill');
                         this.addFloatingText(p.x, p.y - 30, 'ĐÃ CỨU SỐNG!', '#4ade80');
                         this.spawnBurstParticles(p.x, p.y, '#4ade80', 20);
+                        if (this.roomCode) {
+                            this.sendNetPacket({
+                                type: 'EVENT_REVIVE',
+                                senderId: this.localId,
+                                targetId: p.id
+                            });
+                        }
                         return;
                     }
                 }
@@ -1729,7 +2250,7 @@
                 for (let i = this.groundLoots.length - 1; i >= 0; i--) {
                     const item = this.groundLoots[i];
                     if (Math.hypot(item.x - me.x, item.y - me.y) < 68) {
-                        this.pickupLootItem(me, item, i);
+                        this.pickupLootItem(me, item, i, false);
                         return;
                     }
                 }
@@ -1748,26 +2269,48 @@
                 const weaponPool = ['smg', 'shotgun', 'railgun', 'firestaff', 'katana', 'frostbow'];
                 const chosenWep = weaponPool[Math.floor(Math.random() * weaponPool.length)];
 
-                this.groundLoots.push({
-                    x: chest.x - 24,
-                    y: chest.y + 20,
-                    kind: 'weapon',
-                    weaponId: chosenWep
-                });
-                this.groundLoots.push({
-                    x: chest.x + 28,
-                    y: chest.y + 20,
-                    kind: 'potion_hp'
-                });
-                this.groundLoots.push({
-                    x: chest.x,
-                    y: chest.y + 38,
-                    kind: 'potion_mana'
-                });
+                const newLoots = [
+                    {
+                        x: chest.x - 24,
+                        y: chest.y + 20,
+                        kind: 'weapon',
+                        weaponId: chosenWep
+                    },
+                    {
+                        x: chest.x + 28,
+                        y: chest.y + 20,
+                        kind: 'potion_hp'
+                    },
+                    {
+                        x: chest.x,
+                        y: chest.y + 38,
+                        kind: 'potion_mana'
+                    }
+                ];
+
+                newLoots.forEach(l => this.groundLoots.push(l));
+
+                if (this.roomCode) {
+                    this.sendNetPacket({
+                        type: 'EVENT_OPEN_CHEST',
+                        senderId: this.localId,
+                        chestId: chest.id,
+                        loots: newLoots
+                    });
+                }
             }
 
-            pickupLootItem(hero, item, idx) {
+            pickupLootItem(hero, item, idx, isRemote = false) {
+                if (!item) return;
                 this.sfx.play('pickup');
+                if (!isRemote && this.roomCode) {
+                    this.sendNetPacket({
+                        type: 'EVENT_PICKUP_LOOT',
+                        senderId: this.localId,
+                        heroId: hero.id,
+                        lootIndex: idx
+                    });
+                }
                 if (item.kind === 'weapon') {
                     const wep = WEAPONS[item.weaponId];
                     if (!hero.weapons[1]) {
@@ -1797,6 +2340,13 @@
                 this.sfx.play('skill');
                 if (this.floorLevel >= 3) {
                     // Completed full 3-floor dungeon!
+                    if (this.roomCode) {
+                        this.sendNetPacket({
+                            type: 'EVENT_NEXT_FLOOR',
+                            senderId: this.localId,
+                            victory: true
+                        });
+                    }
                     this.showEndScreen(true);
                     return;
                 }
@@ -1845,6 +2395,16 @@
                 this.floorLevel++;
                 this.generateDungeonFloor(this.floorLevel);
                 this.inGame = true;
+
+                if (this.roomCode) {
+                    this.sendNetPacket({
+                        type: 'EVENT_NEXT_FLOOR',
+                        senderId: this.localId,
+                        floorLevel: this.floorLevel,
+                        crates: this.crates,
+                        chests: this.chests
+                    });
+                }
             }
 
             renderBuffHudIcons() {
@@ -1957,13 +2517,13 @@
                         }
                     }
 
-                    // AI Companion Bot Logic
-                    if (p.isBot && !p.downed) {
+                    // AI Companion Bot Logic (Host-controlled in online rooms, interpolated on Clients)
+                    if (p.isBot && !p.downed && (!this.roomCode || this.isHost)) {
                         this.updateCompanionBot(p, me, dt);
-                    } else if (!p.isLocal && !p.isBot) {
-                        // Smooth interpolation for remote Wi-Fi teammates
-                        p.x += (p.targetX - p.x) * 0.25;
-                        p.y += (p.targetY - p.y) * 0.25;
+                    } else if (!p.isLocal) {
+                        // Smooth interpolation for remote P2P teammates & Host-synced Bots
+                        p.x += (p.targetX - p.x) * 0.3;
+                        p.y += (p.targetY - p.y) * 0.3;
                     }
                 });
 
@@ -2028,13 +2588,15 @@
                         const dist = Math.hypot(targetHero.x - e.x, targetHero.y - e.y);
                         const ang = Math.atan2(targetHero.y - e.y, targetHero.x - e.x);
 
-                        if (dist > (e.isBoss ? 150 : 110)) {
-                            this.moveEntityWithCollision(e, Math.cos(ang) * e.speed * speedMult, Math.sin(ang) * e.speed * speedMult);
+                        if (!this.roomCode || this.isHost) {
+                            if (dist > (e.isBoss ? 150 : 110)) {
+                                this.moveEntityWithCollision(e, Math.cos(ang) * e.speed * speedMult, Math.sin(ang) * e.speed * speedMult);
+                            }
                         }
 
                         e.fireTimer -= dt;
                         if (e.fireTimer <= 0) {
-                            e.fireTimer = e.fireRate;
+                            e.fireTimer = e.fireRate || 1.4;
                             this.enemyAttackPattern(e, ang);
                         }
                     }
@@ -2164,6 +2726,13 @@
                             downedAlly.hp = Math.ceil(downedAlly.maxHp * 0.5);
                             downedAlly.armor = downedAlly.maxArmor;
                             this.addFloatingText(downedAlly.x, downedAlly.y - 30, `${bot.name} đã cứu!`, '#4ade80');
+                            if (this.roomCode) {
+                                this.sendNetPacket({
+                                    type: 'EVENT_REVIVE',
+                                    senderId: this.localId,
+                                    targetId: downedAlly.id
+                                });
+                            }
                         }
                     }
                     return;
@@ -2191,7 +2760,7 @@
 
                     this.fireWeapon(bot);
                     if (bot.skillCooldown <= 0 && Math.random() < 0.03) {
-                        this.triggerHeroSkill(bot);
+                        this.triggerHeroSkill(bot, false);
                     }
                 } else if (distToLeader > 95) {
                     const ang = Math.atan2(leader.y - bot.y, leader.x - bot.x);
@@ -2256,11 +2825,22 @@
                 }
             }
 
-            damageEnemy(enemy, amount, attacker) {
+            damageEnemy(enemy, amount, attacker, isFromRemote = false) {
                 enemy.hp -= amount;
                 this.sfx.play('hit');
                 this.addFloatingText(enemy.x + (Math.random() - 0.5) * 18, enemy.y - 20, `-${amount}`, '#fde047');
                 this.spawnBurstParticles(enemy.x, enemy.y, enemy.color, 5);
+
+                // If a Client hits an enemy, notify the Host so authoritative enemy HP decreases
+                if (this.roomCode && !this.isHost && !isFromRemote && attacker && attacker.isLocal) {
+                    this.sendNetPacket({
+                        type: 'EVENT_ENEMY_DAMAGE',
+                        senderId: this.localId,
+                        enemyId: enemy.id,
+                        amount,
+                        attackerId: attacker.id
+                    });
+                }
 
                 if (enemy.hp <= 0) {
                     const idx = this.enemies.indexOf(enemy);
@@ -2326,7 +2906,7 @@
 
                 this.enemies.forEach(e => {
                     if (Math.hypot(e.x - x, e.y - y) <= radius + e.radius) {
-                        this.damageEnemy(e, damage, null);
+                        this.damageEnemy(e, damage, this.players[this.localId]);
                     }
                 });
             }
@@ -2336,22 +2916,53 @@
             // ------------------------------------------------------------------------
             checkRoomState(me) {
                 const half = this.roomSize / 2 - 45;
-                for (const rm of this.rooms) {
-                    if (Math.abs(me.x - rm.x) < half && Math.abs(me.y - rm.y) < half) {
-                        this.currentRoomIndex = rm.index;
-                        rm.visited = true;
 
-                        // Pull teammates into combat room when wave starts
-                        if (!rm.cleared && !this.gatesLocked && (rm.type === 'combat' || rm.type === 'boss')) {
-                            Object.values(this.players).forEach(p => {
-                                if (p.id !== me.id) {
-                                    p.x = me.x + (Math.random() - 0.5) * 50;
-                                    p.y = me.y + (Math.random() - 0.5) * 50;
-                                }
-                            });
-                            this.triggerRoomWave(rm);
+                // On Clients in an online room, room waves are controlled by the Host
+                if (this.roomCode && !this.isHost) {
+                    const curRoom = this.rooms[this.currentRoomIndex];
+                    if (curRoom) {
+                        const banner = document.getElementById('hudRoomTitle');
+                        const dot = document.getElementById('hudRoomStateDot');
+                        if (this.gatesLocked) {
+                            dot.className = 'w-2.5 h-2.5 rounded-full bg-red-500 animate-ping';
+                            banner.textContent = curRoom.type === 'boss'
+                                ? 'CẢNH BÁO: BOSS XUẤT HIỆN!'
+                                : `${curRoom.name} • Đợt Quái ${curRoom.wave}/${curRoom.maxWaves}`;
+                        } else if (curRoom.cleared) {
+                            dot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-400';
+                            banner.textContent = `${curRoom.name} • AN TOÀN`;
                         }
-                        break;
+                    }
+                    return;
+                }
+
+                // Check if any living real player stepped into a room
+                const activeHeroes = Object.values(this.players).filter(p => !p.isBot && !p.downed);
+                const checkTargets = activeHeroes.length > 0 ? activeHeroes : [me];
+
+                for (const hero of checkTargets) {
+                    for (const rm of this.rooms) {
+                        if (Math.abs(hero.x - rm.x) < half && Math.abs(hero.y - rm.y) < half) {
+                            if (hero.id === me.id || !this.gatesLocked) {
+                                this.currentRoomIndex = rm.index;
+                            }
+                            rm.visited = true;
+
+                            // Pull teammates into combat room when wave starts
+                            if (!rm.cleared && !this.gatesLocked && (rm.type === 'combat' || rm.type === 'boss')) {
+                                this.currentRoomIndex = rm.index;
+                                Object.values(this.players).forEach(p => {
+                                    if (p.id !== hero.id) {
+                                        p.x = hero.x + (Math.random() - 0.5) * 50;
+                                        p.y = hero.y + (Math.random() - 0.5) * 50;
+                                        p.targetX = p.x;
+                                        p.targetY = p.y;
+                                    }
+                                });
+                                this.triggerRoomWave(rm);
+                            }
+                            break;
+                        }
                     }
                 }
 
@@ -2952,6 +3563,16 @@
 
             restartExpedition() {
                 this.launchExpedition(true);
+                if (this.roomCode && this.isHost) {
+                    this.sendNetPacket({
+                        type: 'START_GAME',
+                        members: this.lobbyMembers,
+                        fillWithBots: this.fillWithBots,
+                        floorLevel: this.floorLevel,
+                        crates: this.crates,
+                        chests: this.chests
+                    });
+                }
             }
 
             returnToLobby() {
