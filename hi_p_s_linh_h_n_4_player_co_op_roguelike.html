@@ -1,0 +1,3107 @@
+<!DOCTYPE html>
+<html lang="vi" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Hiệp Sĩ Linh Hồn - Co-op 4 Người (Soul Knight Web)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:ital,wght@0,500;0,600;0,700;1,700&family=VT323&display=swap" rel="stylesheet">
+    <style>
+        * {
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+            box-sizing: border-box;
+        }
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #0b0e17;
+            font-family: 'Chakra Petch', sans-serif;
+            color: #f8fafc;
+        }
+        .pixel-font {
+            font-family: 'VT323', monospace;
+            letter-spacing: 0.5px;
+        }
+        #gameCanvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            background-color: #0f131f;
+            image-rendering: pixelated;
+        }
+        /* Soul Knight style retro UI borders */
+        .sk-panel {
+            background: rgba(15, 23, 42, 0.92);
+            border: 3px solid #475569;
+            box-shadow: 0 6px 0 #090d16, inset 0 2px 0 rgba(255,255,255,0.12);
+        }
+        .sk-btn {
+            position: relative;
+            transition: all 0.1s ease;
+            border: 2px solid rgba(255,255,255,0.25);
+            box-shadow: 0 4px 0 rgba(0,0,0,0.6), inset 0 2px 0 rgba(255,255,255,0.25);
+        }
+        .sk-btn:active {
+            transform: translateY(3px);
+            box-shadow: 0 1px 0 rgba(0,0,0,0.6);
+        }
+        .bar-segment {
+            box-shadow: inset 0 2px 0 rgba(255,255,255,0.35), inset 0 -2px 0 rgba(0,0,0,0.3);
+        }
+        @keyframes pulseGlow {
+            0%, 100% { filter: drop-shadow(0 0 6px rgba(250, 204, 21, 0.7)); }
+            50% { filter: drop-shadow(0 0 16px rgba(250, 204, 21, 1)); }
+        }
+        .boss-bar-glow {
+            animation: pulseGlow 2s infinite;
+        }
+        /* Custom scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+    </style>
+</head>
+<body class="relative w-screen h-screen overflow-hidden select-none">
+
+    <!-- MAIN GAME CANVAS -->
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- ==================== HUD OVERLAY (IN-GAME) ==================== -->
+    <div id="hudOverlay" class="hidden fixed inset-0 pointer-events-none z-20 flex flex-col justify-between p-2 sm:p-4">
+        
+        <!-- TOP ROW: Local Player Stats + Boss Bar + Minimap & Room Info -->
+        <div class="flex justify-between items-start gap-2 w-full">
+            
+            <!-- Left: Local Player Status Box (Soul Knight Classic Top-Left Bars) -->
+            <div class=" flex flex-col gap-2 pointer-events-auto">
+                <div class="sk-panel rounded-xl p-2.5 sm:p-3 w-56 sm:w-64 bg-slate-900/90 backdrop-blur-sm">
+                    <div class="flex items-center justify-between mb-1.5">
+                        <div class="flex items-center gap-2">
+                            <div id="hudHeroBadge" class="w-7 h-7 rounded-lg bg-amber-500 flex items-center justify-center text-slate-950 font-bold text-sm shadow">
+                                <i class="fa-solid fa-shield-halved"></i>
+                            </div>
+                            <div>
+                                <div id="hudPlayerName" class="text-xs sm:text-sm font-bold text-amber-300 leading-none">Hiệp Sĩ</div>
+                                <div id="hudFloorText" class="text-[10px] text-slate-400">Tầng 1-1 • Hầm Ngục Tối</div>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-1 bg-slate-950/90 px-2 py-0.5 rounded border border-amber-500/40">
+                            <i class="fa-solid fa-coins text-amber-400 text-xs"></i>
+                            <span id="hudCoins" class="text-xs font-bold text-amber-300">0</span>
+                        </div>
+                    </div>
+
+                    <!-- HP Bar (Red) -->
+                    <div class="relative w-full h-4 bg-slate-950 rounded border border-slate-700 overflow-hidden mb-1">
+                        <div id="hudHpBar" class="h-full bg-gradient-to-r from-red-600 to-rose-500 bar-segment transition-all duration-150" style="width: 100%;"></div>
+                        <div class="absolute inset-0 flex items-center justify-between px-2 text-[11px] font-bold drop-shadow">
+                            <span class="flex items-center gap-1"><i class="fa-solid fa-heart text-red-200 text-[10px]"></i> MÁU</span>
+                            <span id="hudHpText">7/7</span>
+                        </div>
+                    </div>
+
+                    <!-- Armor Bar (Silver/Slate) -->
+                    <div class="relative w-full h-4 bg-slate-950 rounded border border-slate-700 overflow-hidden mb-1">
+                        <div id="hudArmorBar" class="h-full bg-gradient-to-r from-slate-400 to-cbd5e1 bar-segment bg-slate-300 transition-all duration-150" style="width: 100%;"></div>
+                        <div class="absolute inset-0 flex items-center justify-between px-2 text-[11px] font-bold text-slate-900 drop-shadow-sm">
+                            <span class="flex items-center gap-1 text-white drop-shadow"><i class="fa-solid fa-shield text-sky-200 text-[10px]"></i> GIÁP</span>
+                            <span id="hudArmorText" class="text-white drop-shadow">6/6</span>
+                        </div>
+                    </div>
+
+                    <!-- Energy Bar (Blue) -->
+                    <div class="relative w-full h-4 bg-slate-950 rounded border border-slate-700 overflow-hidden">
+                        <div id="hudEnergyBar" class="h-full bg-gradient-to-r from-blue-600 to-cyan-400 bar-segment transition-all duration-150" style="width: 100%;"></div>
+                        <div class="absolute inset-0 flex items-center justify-between px-2 text-[11px] font-bold drop-shadow">
+                            <span class="flex items-center gap-1"><i class="fa-solid fa-bolt text-cyan-200 text-[10px]"></i> MANA</span>
+                            <span id="hudEnergyText">200/200</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Squad 4-Player Co-op Sidebar -->
+                <div id="hudSquadList" class="flex flex-col gap-1.5 w-48 sm:w-56">
+                    <!-- Populated dynamically with teammates & bots -->
+                </div>
+            </div>
+
+            <!-- Center Top: Boss Health Bar & Wave Banner -->
+            <div class="flex-1 max-w-md mx-auto flex flex-col items-center pointer-events-none px-2">
+                <!-- Room / Wave Notification -->
+                <div id="hudRoomBanner" class="px-4 py-1 rounded-full bg-slate-900/85 border border-slate-700 text-xs sm:text-sm font-bold text-amber-300 shadow-lg mb-2 flex items-center gap-2">
+                    <span id="hudRoomStateDot" class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping"></span>
+                    <span id="hudRoomTitle">Phòng Khởi Đầu (An Toàn)</span>
+                </div>
+
+                <!-- Boss Health Bar (Hidden unless Boss active) -->
+                <div id="hudBossContainer" class="hidden w-full sk-panel rounded-xl p-2 bg-red-950/90 border-red-500/80 boss-bar-glow">
+                    <div class="flex justify-between items-center text-xs font-bold text-red-200 mb-1 px-1">
+                        <span id="hudBossName" class="flex items-center gap-1.5 text-amber-300 uppercase tracking-wider">
+                            <i class="fa-solid fa-skull text-red-400"></i> QUỶ VƯƠNG HỎA NGỤC
+                        </span>
+                        <span id="hudBossHpText">1200 / 1200</span>
+                    </div>
+                    <div class="w-full h-4 bg-slate-950 rounded-lg overflow-hidden border border-red-400/50 p-0.5">
+                        <div id="hudBossBar" class="h-full bg-gradient-to-r from-red-600 via-orange-500 to-amber-400 rounded transition-all duration-100" style="width: 100%;"></div>
+                    </div>
+                </div>
+
+                <!-- Interactive Prompt (Chest / Weapon / Revive / Portal) -->
+                <div id="hudInteractPrompt" class="hidden mt-2 px-4 py-1.5 rounded-xl bg-amber-500/95 text-slate-950 font-extrabold text-xs sm:text-sm shadow-lg border-2 border-amber-200 animate-bounce pointer-events-auto cursor-pointer" onclick="window.gameApp.triggerInteract()">
+                    [E] Tương tác
+                </div>
+            </div>
+
+            <!-- Right Top: Minimap + Room Code + Pause/Settings -->
+            <div class="flex flex-col items-end gap-2 pointer-events-auto">
+                <div class="sk-panel rounded-xl p-2 bg-slate-900/90 flex flex-col items-center">
+                    <div class="flex items-center justify-between w-full mb-1 px-1 gap-2">
+                        <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Bản Đồ Hầm Ngục</span>
+                        <span id="hudRoomCodeBadge" class="text-[10px] bg-indigo-950 text-indigo-300 px-1.5 py-0.5 rounded border border-indigo-700 font-mono">SOLO</span>
+                    </div>
+                    <canvas id="minimapCanvas" width="124" height="88" class="rounded bg-slate-950 border border-slate-800"></canvas>
+                    <div class="flex gap-2 mt-1.5 w-full justify-between">
+                        <button onclick="window.gameApp.toggleSound()" id="btnSoundToggle" class="flex-1 py-1 px-2 rounded bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 border border-slate-600 flex items-center justify-center gap-1">
+                            <i class="fa-solid fa-volume-high text-emerald-400"></i> Âm
+                        </button>
+                        <button onclick="window.gameApp.returnToLobby()" class="flex-1 py-1 px-2 rounded bg-red-900/70 hover:bg-red-800 text-xs text-red-200 border border-red-700/60 flex items-center justify-center gap-1">
+                            <i class="fa-solid fa-door-open"></i> Thoát
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Active Buffs List -->
+                <div id="hudBuffIcons" class="flex gap-1 flex-wrap justify-end max-w-[140px]"></div>
+            </div>
+        </div>
+
+        <!-- BOTTOM ROW: Virtual Joystick (Left) & Weapon/Skill/Action Buttons (Right) -->
+        <div class="flex justify-between items-end w-full pb-1 sm:pb-2">
+            
+            <!-- Left Bottom: Virtual Touch Joystick + PC Key Hints -->
+            <div class="flex flex-col items-start gap-2 pointer-events-auto">
+                <div class="hidden sm:flex items-center gap-2 bg-slate-900/80 px-3 py-1.5 rounded-lg border border-slate-700/80 text-[11px] text-slate-300">
+                    <span><kbd class="px-1.5 py-0.5 bg-slate-800 rounded border border-slate-600 text-amber-300">WASD</kbd> Di chuyển</span>
+                    <span>•</span>
+                    <span><kbd class="px-1.5 py-0.5 bg-slate-800 rounded border border-slate-600 text-amber-300">Chuột / J</kbd> Bắn</span>
+                    <span>•</span>
+                    <span><kbd class="px-1.5 py-0.5 bg-slate-800 rounded border border-slate-600 text-amber-300">K / Chuột Phải</kbd> Kỹ Năng</span>
+                    <span>•</span>
+                    <span><kbd class="px-1.5 py-0.5 bg-slate-800 rounded border border-slate-600 text-amber-300">Q</kbd> Đổi Súng</span>
+                    <span>•</span>
+                    <span><kbd class="px-1.5 py-0.5 bg-slate-800 rounded border border-slate-600 text-amber-300">E</kbd> Nhặt/Cứu</span>
+                </div>
+
+                <!-- Touch Joystick Zone -->
+                <div id="joystickZone" class="relative w-32 h-32 sm:w-36 sm:h-36 rounded-full bg-slate-900/50 border-2 border-slate-600/60 backdrop-blur-sm flex items-center justify-center touch-none">
+                    <div class="w-12 h-12 rounded-full border border-slate-500/40 pointer-events-none"></div>
+                    <div id="joystickKnob" class="absolute w-14 h-14 rounded-full bg-gradient-to-b from-amber-400 to-amber-600 border-2 border-amber-200 shadow-lg pointer-events-none flex items-center justify-center text-slate-950 font-bold">
+                        <i class="fa-solid fa-arrows-up-down-left-right text-sm"></i>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Bottom: Combat Controls (Weapon Swap, Interact, Skill, Shoot) -->
+            <div class="flex items-end gap-2.5 sm:gap-4 pointer-events-auto select-none">
+                
+                <!-- Interact / Revive / Open Chest Button (E) -->
+                <button id="btnInteract" onclick="window.gameApp.triggerInteract()" class="hidden w-14 h-14 sm:w-16 sm:h-16 rounded-2xl sk-btn bg-gradient-to-b from-emerald-500 to-emerald-700 text-white flex flex-col items-center justify-center shadow-lg">
+                    <i class="fa-solid fa-hand-sparkles text-lg sm:text-xl"></i>
+                    <span class="text-[10px] font-bold uppercase mt-0.5">Nhặt [E]</span>
+                </button>
+
+                <!-- Weapon Slot Swap Button (Q) -->
+                <div class="flex flex-col items-center gap-1">
+                    <div id="hudSecondaryWeapon" class="text-[10px] text-slate-400 bg-slate-900/90 px-2 py-0.5 rounded border border-slate-700 truncate max-w-[110px]">
+                        Phụ: Trống
+                    </div>
+                    <button onclick="window.gameApp.swapWeapon()" class="h-14 sm:h-16 px-3 sm:px-4 rounded-2xl sk-btn bg-slate-800 hover:bg-slate-700 text-amber-300 flex flex-col items-center justify-center min-w-[96px] sm:min-w-[115px]">
+                        <div class="flex items-center gap-1.5">
+                            <i id="hudWeaponIcon" class="fa-solid fa-gun text-base sm:text-lg text-amber-400"></i>
+                            <span id="hudWeaponName" class="text-xs sm:text-sm font-bold text-white truncate max-w-[75px]">Lục Mặc Định</span>
+                        </div>
+                        <div class="flex items-center gap-2 text-[10px] text-cyan-300 mt-0.5">
+                            <span><i class="fa-solid fa-bolt"></i> <span id="hudWeaponCost">0</span></span>
+                            <span class="text-slate-400">[Q] Đổi</span>
+                        </div>
+                    </button>
+                </div>
+
+                <!-- Active Skill Button (K) -->
+                <button id="btnSkill" onclick="window.gameApp.useSkill()" class="relative w-16 h-16 sm:w-20 sm:h-20 rounded-full sk-btn bg-gradient-to-b from-indigo-500 to-purple-700 text-white flex flex-col items-center justify-center overflow-hidden">
+                    <div id="hudSkillCooldownOverlay" class="absolute bottom-0 left-0 right-0 bg-slate-950/80 transition-all duration-100 pointer-events-none" style="height: 0%;"></div>
+                    <i id="hudSkillIcon" class="fa-solid fa-bolt-lightning text-xl sm:text-2xl text-amber-300 z-10"></i>
+                    <span id="hudSkillLabel" class="text-[10px] sm:text-xs font-extrabold uppercase mt-0.5 z-10">Kỹ Năng [K]</span>
+                </button>
+
+                <!-- Primary Fire / Attack Button (Holdable) -->
+                <button id="btnFire" class="w-20 h-20 sm:w-24 sm:h-24 rounded-full sk-btn bg-gradient-to-b from-red-500 via-rose-600 to-red-800 text-white flex flex-col items-center justify-center shadow-xl border-4 border-red-300/60 active:scale-95 touch-none">
+                    <i class="fa-solid fa-crosshairs text-2xl sm:text-3xl drop-shadow"></i>
+                    <span class="text-xs font-extrabold uppercase tracking-wider mt-0.5">KHAI HỎA</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== LOBBY & MAIN MENU MODAL ==================== -->
+    <div id="lobbyModal" class="fixed inset-0 z-30 flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-3 sm:p-6 overflow-y-auto">
+        <div class="sk-panel rounded-2xl max-w-5xl w-full p-4 sm:p-6 bg-slate-900 border-slate-600 shadow-2xl my-auto">
+            
+            <!-- Header Title -->
+            <div class="flex flex-col md:flex-row justify-between items-center gap-3 pb-4 border-b border-slate-700/80">
+                <div class="flex items-center gap-3">
+                    <div class="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-br from-amber-400 via-orange-500 to-red-600 flex items-center justify-center shadow-lg border-2 border-amber-200">
+                        <i class="fa-solid fa-dungeon text-2xl sm:text-3xl text-slate-950"></i>
+                    </div>
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <h1 class="text-2xl sm:text-3xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-orange-400 to-rose-400 uppercase">
+                                Hiệp Sĩ Linh Hồn
+                            </h1>
+                            <span class="px-2 py-0.5 text-[11px] font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 rounded-full">
+                                CO-OP 4 NGƯỜI WIFI
+                            </span>
+                        </div>
+                        <p class="text-xs sm:text-sm text-slate-400">Roguelike Dungeon Shooter • Khám phá hầm ngục, nhặt vũ khí huyền thoại & diệt Boss cùng hội bạn!</p>
+                    </div>
+                </div>
+
+                <!-- Network & Player Identity -->
+                <div class="flex items-center gap-2 bg-slate-950/90 px-3 py-2 rounded-xl border border-slate-800 w-full md:w-auto justify-between md:justify-end">
+                    <div class="flex items-center gap-2">
+                        <span id="netStatusDot" class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
+                        <span id="netStatusText" class="text-xs font-semibold text-slate-300">Máy Chủ Wi-Fi / Cloud Sẵn Sàng</span>
+                    </div>
+                    <span id="userUidBadge" class="text-[10px] font-mono text-slate-500 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">ID: ...</span>
+                </div>
+            </div>
+
+            <!-- Main Lobby Grid -->
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 mt-5">
+                
+                <!-- LEFT 7 COLS: Hero Class Selector & Player Name -->
+                <div class="lg:col-span-7 flex flex-col gap-4">
+                    
+                    <!-- Player Name & Quick Mode -->
+                    <div class="flex flex-col sm:flex-row gap-3 bg-slate-950/60 p-3 rounded-xl border border-slate-800">
+                        <div class="flex-1">
+                            <label class="block text-[11px] font-bold uppercase text-slate-400 mb-1">Tên Chiến Binh Của Bạn</label>
+                            <div class="flex items-center bg-slate-900 rounded-lg border border-slate-700 px-3 py-1.5">
+                                <i class="fa-solid fa-user-ninja text-amber-400 mr-2 text-sm"></i>
+                                <input id="inputPlayerName" type="text" maxlength="14" value="Chiến Binh 01" onchange="window.gameApp.updateProfile()" class="bg-transparent text-sm font-bold text-white focus:outline-none w-full" placeholder="Nhập tên...">
+                            </div>
+                        </div>
+                        <div class="flex flex-col justify-end">
+                            <button onclick="window.gameApp.startQuickFourPlayer()" class="h-10 px-4 rounded-lg sk-btn bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-slate-950 font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg">
+                                <i class="fa-solid fa-bolt"></i> Chơi Ngay (Đủ Đội 4 Người)
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 4 Soul Knight Hero Classes -->
+                    <div>
+                        <div class="flex justify-between items-center mb-2">
+                            <h2 class="text-xs sm:text-sm font-extrabold uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+                                <i class="fa-solid fa-crown"></i> Chọn Hệ Phái Anh Hùng (4 Class)
+                            </h2>
+                            <span class="text-[11px] text-slate-400">Mỗi anh hùng có Kỹ Năng Chủ Động riêng</span>
+                        </div>
+                        <div id="heroCardsGrid" class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                            <!-- Generated dynamically by JS -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- RIGHT 5 COLS: 4-Player Wi-Fi Room & Squad Slots -->
+                <div class="lg:col-span-5 flex flex-col justify-between bg-slate-950/75 rounded-2xl p-4 border border-slate-800">
+                    <div>
+                        <div class="flex items-center justify-between mb-3">
+                            <h2 class="text-sm font-extrabold uppercase tracking-wider text-cyan-400 flex items-center gap-1.5">
+                                <i class="fa-solid fa-wifi"></i> Phòng Tổ Đội 4 Người
+                            </h2>
+                            <span id="roomCodeDisplay" class="px-2.5 py-0.5 rounded-lg bg-indigo-950 border border-indigo-500/50 text-indigo-300 font-mono font-bold text-xs">
+                                CHƯA VÀO PHÒNG
+                            </span>
+                        </div>
+
+                        <!-- Create / Join Room Controls -->
+                        <div id="roomActionControls" class="flex flex-col gap-2.5 mb-4">
+                            <div class="grid grid-cols-2 gap-2">
+                                <button onclick="window.gameApp.createOnlineRoom()" class="py-2.5 px-3 rounded-xl sk-btn bg-gradient-to-b from-indigo-500 to-indigo-700 hover:from-indigo-400 hover:to-indigo-600 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2">
+                                    <i class="fa-solid fa-plus-circle"></i> Tạo Phòng Mới
+                                </button>
+                                <div class="flex gap-1">
+                                    <input id="inputRoomCode" type="text" maxlength="6" placeholder="MÃ PHÒNG" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-2.5 text-center font-mono font-bold text-sm uppercase text-amber-300 focus:outline-none focus:border-amber-400">
+                                    <button onclick="window.gameApp.joinOnlineRoom()" class="px-3 rounded-xl sk-btn bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shrink-0">
+                                        Vào
+                                    </button>
+                                </div>
+                            </div>
+                            <p class="text-[11px] text-slate-400 leading-relaxed">
+                                <i class="fa-solid fa-circle-info text-cyan-400 mr-1"></i>
+                                Mẹo: Tạo phòng để lấy <strong>Mã 6 Ký Tự</strong>. Bạn bè trên điện thoại/máy tính khác (hoặc tab khác) nhập mã này để chiến cùng nhau thời gian thực!
+                            </p>
+                        </div>
+
+                        <!-- 4 Squad Slots -->
+                        <div class="mb-3">
+                            <div class="flex justify-between items-center mb-1.5">
+                                <span class="text-xs font-bold text-slate-300">Danh Sách Tổ Đội (4 Vị Trí)</span>
+                                <label class="flex items-center gap-1.5 cursor-pointer text-xs text-amber-300 font-semibold">
+                                    <input id="chkFillBots" type="checkbox" checked onchange="window.gameApp.toggleBotFill()" class="accent-amber-500 w-3.5 h-3.5 rounded">
+                                    <span>Tự lấp đầy Bot AI Đồng Đội</span>
+                                </label>
+                            </div>
+                            <div id="lobbySquadSlots" class="flex flex-col gap-2">
+                                <!-- 4 Slots rendered by JS -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Launch Game Button -->
+                    <div class="pt-3 border-t border-slate-800 flex flex-col gap-2">
+                        <div id="lobbyToastMsg" class="hidden text-xs text-center py-1.5 px-3 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-300 font-semibold"></div>
+                        <button id="btnStartExpedition" onclick="window.gameApp.startGameFromLobby()" class="w-full py-3.5 rounded-xl sk-btn bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 font-black text-base uppercase tracking-wider flex items-center justify-center gap-2 shadow-xl">
+                            <i class="fa-solid fa-play"></i> Bắt Đầu Viễn Chinh Hầm Ngục
+                        </button>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== FLOOR CLEAR & BUFF SELECTION MODAL ==================== -->
+    <div id="buffModal" class="hidden fixed inset-0 z-40 flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4">
+        <div class="sk-panel rounded-2xl max-w-2xl w-full p-6 bg-slate-900 border-amber-500/60 text-center">
+            <div class="inline-flex items-center justify-center w-14 h-14 rounded-full bg-amber-500/20 border-2 border-amber-400 text-amber-300 mb-2">
+                <i class="fa-solid fa-wand-magic-sparkles text-2xl"></i>
+            </div>
+            <h2 class="text-2xl font-black text-amber-300 uppercase">Chúc Phúc Hầm Ngục</h2>
+            <p class="text-xs sm:text-sm text-slate-300 mb-5">Tổ đội đã vượt qua cổng dịch chuyển! Hãy chọn 1 Thiên Phú vĩnh viễn cho chuyến đi này:</p>
+            <div id="buffChoicesContainer" class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+                <!-- Populated dynamically -->
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== GAME OVER / VICTORY MODAL ==================== -->
+    <div id="endModal" class="hidden fixed inset-0 z-40 flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4">
+        <div class="sk-panel rounded-2xl max-w-md w-full p-6 bg-slate-900 text-center">
+            <div id="endModalIcon" class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-amber-500/20 border-2 border-amber-400 text-amber-300 mb-3">
+                <i class="fa-solid fa-trophy text-3xl"></i>
+            </div>
+            <h2 id="endModalTitle" class="text-2xl font-black text-amber-300 uppercase mb-1">Chiến Thắng Huy Hoàng!</h2>
+            <p id="endModalDesc" class="text-sm text-slate-300 mb-4">Tổ đội của bạn đã tiêu diệt Boss và chinh phục hầm ngục!</p>
+            
+            <div class="bg-slate-950 rounded-xl p-3 border border-slate-800 mb-5 grid grid-cols-3 gap-2 text-center">
+                <div>
+                    <div class="text-[11px] text-slate-400">Tầng Đạt Tới</div>
+                    <div id="endStatFloor" class="text-lg font-black text-amber-400">1-3</div>
+                </div>
+                <div>
+                    <div class="text-[11px] text-slate-400">Quái Tiêu Diệt</div>
+                    <div id="endStatKills" class="text-lg font-black text-emerald-400">42</div>
+                </div>
+                <div>
+                    <div class="text-[11px] text-slate-400">Vàng Thu Thập</div>
+                    <div id="endStatCoins" class="text-lg font-black text-yellow-300">185</div>
+                </div>
+            </div>
+
+            <div class="flex gap-3">
+                <button onclick="window.gameApp.restartExpedition()" class="flex-1 py-3 rounded-xl sk-btn bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm">
+                    <i class="fa-solid fa-rotate-right mr-1"></i> Chơi Lại Ngay
+                </button>
+                <button onclick="window.gameApp.returnToLobby()" class="flex-1 py-3 rounded-xl sk-btn bg-slate-700 hover:bg-slate-600 text-white font-bold text-sm">
+                    <i class="fa-solid fa-users mr-1"></i> Về Phòng Chờ
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== FIREBASE & COMPLETE GAME ENGINE ==================== -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // ============================================================================
+        // 1. SOUND SYNTHESIZER (Retro Soul Knight SFX via Web Audio API - Zero External Assets)
+        // ============================================================================
+        class SoundEffects {
+            constructor() {
+                this.ctx = null;
+                this.enabled = true;
+            }
+            init() {
+                if (!this.ctx) {
+                    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                    if (AudioCtx) this.ctx = new AudioCtx();
+                }
+                if (this.ctx && this.ctx.state === 'suspended') {
+                    this.ctx.resume();
+                }
+            }
+            play(type) {
+                if (!this.enabled) return;
+                try {
+                    this.init();
+                    if (!this.ctx) return;
+                    const now = this.ctx.currentTime;
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+
+                    if (type === 'shoot') {
+                        osc.type = 'square';
+                        osc.frequency.setValueAtTime(420, now);
+                        osc.frequency.exponentialRampToValueAtTime(110, now + 0.08);
+                        gain.gain.setValueAtTime(0.12, now);
+                        gain.gain.linearRampToValueAtTime(0.01, now + 0.08);
+                        osc.start(now);
+                        osc.stop(now + 0.08);
+                    } else if (type === 'laser') {
+                        osc.type = 'sawtooth';
+                        osc.frequency.setValueAtTime(980, now);
+                        osc.frequency.exponentialRampToValueAtTime(260, now + 0.16);
+                        gain.gain.setValueAtTime(0.14, now);
+                        gain.gain.linearRampToValueAtTime(0.01, now + 0.16);
+                        osc.start(now);
+                        osc.stop(now + 0.16);
+                    } else if (type === 'sword') {
+                        osc.type = 'triangle';
+                        osc.frequency.setValueAtTime(240, now);
+                        osc.frequency.linearRampToValueAtTime(580, now + 0.09);
+                        gain.gain.setValueAtTime(0.18, now);
+                        gain.gain.linearRampToValueAtTime(0.01, now + 0.1);
+                        osc.start(now);
+                        osc.stop(now + 0.1);
+                    } else if (type === 'explosion') {
+                        osc.type = 'sawtooth';
+                        osc.frequency.setValueAtTime(140, now);
+                        osc.frequency.exponentialRampToValueAtTime(32, now + 0.32);
+                        gain.gain.setValueAtTime(0.24, now);
+                        gain.gain.linearRampToValueAtTime(0.01, now + 0.32);
+                        osc.start(now);
+                        osc.stop(now + 0.32);
+                    } else if (type === 'skill') {
+                        osc.type = 'sine';
+                        osc.frequency.setValueAtTime(320, now);
+                        osc.frequency.exponentialRampToValueAtTime(880, now + 0.22);
+                        gain.gain.setValueAtTime(0.18, now);
+                        gain.gain.linearRampToValueAtTime(0.01, now + 0.22);
+                        osc.start(now);
+                        osc.stop(now + 0.22);
+                    } else if (type === 'pickup') {
+                        osc.type = 'triangle';
+                        osc.frequency.setValueAtTime(520, now);
+                        osc.frequency.setValueAtTime(780, now + 0.06);
+                        gain.gain.setValueAtTime(0.14, now);
+                        gain.gain.linearRampToValueAtTime(0.01, now + 0.14);
+                        osc.start(now);
+                        osc.stop(now + 0.14);
+                    } else if (type === 'hit') {
+                        osc.type = 'square';
+                        osc.frequency.setValueAtTime(160, now);
+                        osc.frequency.linearRampToValueAtTime(75, now + 0.06);
+                        gain.gain.setValueAtTime(0.1, now);
+                        gain.gain.linearRampToValueAtTime(0.01, now + 0.06);
+                        osc.start(now);
+                        osc.stop(now + 0.06);
+                    }
+                } catch (e) {
+                    // Ignore audio context locks
+                }
+            }
+        }
+
+        // ============================================================================
+        // 2. HERO CLASSES, WEAPONS, BUFFS DEFINITIONS (SOUL KNIGHT DATA)
+        // ============================================================================
+        const HERO_CLASSES = {
+            knight: {
+                id: 'knight',
+                name: 'Hiệp Sĩ',
+                title: 'Chiến Binh Song Hỏa',
+                hp: 7,
+                armor: 6,
+                energy: 200,
+                speed: 4.3,
+                color: '#f59e0b',
+                visorColor: '#38bdf8',
+                capeColor: '#dc2626',
+                icon: 'fa-shield-halved',
+                skillName: 'Song Hỏa',
+                skillDesc: 'Nhân đôi vũ khí đang cầm & tăng 40% tốc bắn trong 5 giây',
+                skillCd: 8.5,
+                starterWeapon: 'pistol'
+            },
+            assassin: {
+                id: 'assassin',
+                name: 'Sát Thủ',
+                title: 'Bóng Ma Tốc Độ',
+                hp: 5,
+                armor: 5,
+                energy: 180,
+                speed: 5.1,
+                color: '#a855f7',
+                visorColor: '#f43f5e',
+                capeColor: '#1e1b4b',
+                icon: 'fa-user-ninja',
+                skillName: 'Ảnh Trảm',
+                skillDesc: 'Lướt nhanh bất tử, chém 38 sát thương & xóa đạn địch trên đường lướt',
+                skillCd: 5.5,
+                starterWeapon: 'katana'
+            },
+            wizard: {
+                id: 'wizard',
+                name: 'Pháp Sư',
+                title: 'Bậc Thầy Nguyên Tố',
+                hp: 4,
+                armor: 6,
+                energy: 260,
+                speed: 4.1,
+                color: '#3b82f6',
+                visorColor: '#fde047',
+                capeColor: '#1d4ed8',
+                icon: 'fa-hat-wizard',
+                skillName: 'Lôi Phạt',
+                skillDesc: 'Phóng sét chuỗi giật 5 mục tiêu, gây 30 sát thương & làm choáng',
+                skillCd: 6.5,
+                starterWeapon: 'firestaff'
+            },
+            engineer: {
+                id: 'engineer',
+                name: 'Kỹ Sư',
+                title: 'Chuyên Gia Cơ Khí',
+                hp: 6,
+                armor: 7,
+                energy: 210,
+                speed: 4.2,
+                color: '#10b981',
+                visorColor: '#fef08a',
+                capeColor: '#047857',
+                icon: 'fa-robot',
+                skillName: 'Tháp Pháo Hộ Vệ',
+                skillDesc: 'Đặt ụ súng tự động bắn địch & phát xung hồi Giáp/Máu cho đồng đội',
+                skillCd: 10.0,
+                starterWeapon: 'smg'
+            }
+        };
+
+        const WEAPONS = {
+            pistol: {
+                id: 'pistol',
+                name: 'Lục Mặc Định',
+                cost: 0,
+                damage: 8,
+                fireRate: 0.24,
+                speed: 12,
+                spread: 0.06,
+                count: 1,
+                color: '#fbbf24',
+                size: 5,
+                type: 'bullet',
+                icon: 'fa-gun',
+                rarity: 'common'
+            },
+            smg: {
+                id: 'smg',
+                name: 'Tiểu Liên Tập Kích',
+                cost: 1,
+                damage: 6,
+                fireRate: 0.11,
+                speed: 13.5,
+                spread: 0.14,
+                count: 1,
+                color: '#f97316',
+                size: 4,
+                type: 'bullet',
+                icon: 'fa-burst',
+                rarity: 'uncommon'
+            },
+            shotgun: {
+                id: 'shotgun',
+                name: 'Shotgun Hoa Cải',
+                cost: 3,
+                damage: 7,
+                fireRate: 0.55,
+                speed: 11.5,
+                spread: 0.36,
+                count: 5,
+                color: '#fb7185',
+                size: 5,
+                type: 'bullet',
+                icon: 'fa-meteor',
+                rarity: 'rare'
+            },
+            railgun: {
+                id: 'railgun',
+                name: 'Laser Quang Năng',
+                cost: 4,
+                damage: 28,
+                fireRate: 0.62,
+                speed: 22,
+                spread: 0.0,
+                count: 1,
+                color: '#22d3ee',
+                size: 7,
+                type: 'laser',
+                pierce: true,
+                icon: 'fa-bolt',
+                rarity: 'epic'
+            },
+            firestaff: {
+                id: 'firestaff',
+                name: 'Trượng Hỏa Cầu',
+                cost: 3,
+                damage: 20,
+                fireRate: 0.45,
+                speed: 9.5,
+                spread: 0.08,
+                count: 1,
+                color: '#ef4444',
+                size: 9,
+                type: 'explosive',
+                icon: 'fa-fire',
+                rarity: 'epic'
+            },
+            katana: {
+                id: 'katana',
+                name: 'Kiếm Ánh Sáng',
+                cost: 0,
+                damage: 18,
+                fireRate: 0.28,
+                speed: 0,
+                spread: 0,
+                count: 1,
+                color: '#38bdf8',
+                size: 56,
+                type: 'melee',
+                icon: 'fa-khanda',
+                rarity: 'rare'
+            },
+            frostbow: {
+                id: 'frostbow',
+                name: 'Nỏ Băng Cực Hàn',
+                cost: 3,
+                damage: 25,
+                fireRate: 0.48,
+                speed: 15,
+                spread: 0.02,
+                count: 1,
+                color: '#60a5fa',
+                size: 6,
+                type: 'frost',
+                pierce: true,
+                icon: 'fa-snowflake',
+                rarity: 'legendary'
+            }
+        };
+
+        const DUNGEON_BUFFS = [
+            { id: 'max_armor', name: 'Khiên Vĩnh Cửu', desc: '+3 Giáp Tối Đa & hồi giáp nhanh hơn 40%', icon: 'fa-shield-virus', color: 'text-sky-400' },
+            { id: 'vampire', name: 'Huyết Kế Hấp Thụ', desc: 'Tỷ lệ 35% hồi 1 Máu khi tiêu diệt quái vật', icon: 'fa-heart-pulse', color: 'text-rose-400' },
+            { id: 'bounce', name: 'Đạn Phản Xạ Gương', desc: 'Đạn bắn ra nảy tường 1 lần & +20% sát thương', icon: 'fa-arrows-split-up-and-left', color: 'text-amber-400' },
+            { id: 'haste', name: 'Tốc Chiến Cuồng Nhiệt', desc: '+25% Tốc độ bắn & Giảm 25% hồi chiêu Kỹ Năng', icon: 'fa-forward-fast', color: 'text-emerald-400' },
+            { id: 'mana_spring', name: 'Suối Nguồn Năng Lượng', desc: '+80 Mana tối đa & tự hồi 3 Mana mỗi giây', icon: 'fa-wand-sparkles', color: 'text-cyan-400' }
+        ];
+
+        // ============================================================================
+        // 3. MAIN GAME ENGINE & MULTIPLAYER MANAGER
+        // ============================================================================
+        class SoulKnightGame {
+            constructor() {
+                this.canvas = document.getElementById('gameCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.minimapCanvas = document.getElementById('minimapCanvas');
+                this.minimapCtx = this.minimapCanvas.getContext('2d');
+                this.sfx = new SoundEffects();
+
+                // Identity & Multiplayer State
+                this.localId = 'p_' + Math.random().toString(36).substring(2, 9);
+                this.playerName = 'Chiến Binh 01';
+                this.selectedClass = 'knight';
+                this.fillWithBots = true;
+
+                // Firebase + Local BroadcastChannel Hybrid Sync
+                this.db = null;
+                this.auth = null;
+                this.firebaseUser = null;
+                this.appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                this.roomCode = null;
+                this.isHost = true;
+                this.roomUnsubscribe = null;
+                this.lastSyncSent = 0;
+                this.bc = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('soulknight_wifi_coop') : null;
+
+                // Game Session State
+                this.inGame = false;
+                this.floorLevel = 1;
+                this.totalKills = 0;
+                this.teamCoins = 0;
+                this.screenShake = 0;
+                this.camera = { x: 0, y: 0 };
+
+                // World & Dungeon Rooms
+                this.roomSize = 920; // Pixel size of each dungeon room
+                this.corridorLength = 240;
+                this.corridorWidth = 180;
+                this.rooms = [];
+                this.currentRoomIndex = 0;
+                this.gatesLocked = false;
+
+                // Entities
+                this.players = {};      // Up to 4 heroes (real players + AI bots)
+                this.enemies = [];
+                this.bullets = [];
+                this.particles = [];
+                this.floatingTexts = [];
+                this.turrets = [];
+                this.crates = [];
+                this.chests = [];
+                this.groundLoots = [];
+                this.portal = null;
+
+                // Input State
+                this.keys = {};
+                this.mouse = { x: 0, y: 0, worldX: 0, worldY: 0, down: false };
+                this.joy = { active: false, dx: 0, dy: 0, originX: 0, originY: 0 };
+                this.touchFiring = false;
+
+                this.initResize();
+                this.initInputs();
+                this.initLobbyUI();
+                this.initFirebaseAndLocalChannel();
+
+                this.lastTime = performance.now();
+                requestAnimationFrame((t) => this.loop(t));
+            }
+
+            // ------------------------------------------------------------------------
+            // FIREBASE & MULTI-TAB / WI-FI SYNC SETUP
+            // ------------------------------------------------------------------------
+            async initFirebaseAndLocalChannel() {
+                if (this.bc) {
+                    this.bc.onmessage = (ev) => this.handleBroadcastMessage(ev.data);
+                }
+
+                try {
+                    if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+                        const firebaseConfig = JSON.parse(__firebase_config);
+                        const app = initializeApp(firebaseConfig);
+                        this.auth = getAuth(app);
+                        this.db = getFirestore(app);
+
+                        // RULE 3: Authenticate FIRST before any Firestore operation
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            await signInWithCustomToken(this.auth, __initial_auth_token);
+                        } else {
+                            await signInAnonymously(this.auth);
+                        }
+
+                        onAuthStateChanged(this.auth, (user) => {
+                            this.firebaseUser = user;
+                            if (user) {
+                                this.localId = user.uid;
+                                document.getElementById('userUidBadge').textContent = `ID: ${user.uid}`;
+                                document.getElementById('netStatusText').textContent = 'Đã kết nối Cloud Wi-Fi';
+                                this.renderLobbySlots();
+                            }
+                        });
+                    } else {
+                        document.getElementById('userUidBadge').textContent = `ID: ${this.localId}`;
+                    }
+                } catch (err) {
+                    console.warn("Chạy ở chế độ LAN / BroadcastChannel:", err);
+                    document.getElementById('userUidBadge').textContent = `ID: ${this.localId}`;
+                }
+            }
+
+            showLobbyToast(msg) {
+                const el = document.getElementById('lobbyToastMsg');
+                if (!el) return;
+                el.textContent = msg;
+                el.classList.remove('hidden');
+                clearTimeout(this._toastTimer);
+                this._toastTimer = setTimeout(() => el.classList.add('hidden'), 4000);
+            }
+
+            async createOnlineRoom() {
+                const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+                let code = '';
+                for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
+                this.roomCode = code;
+                this.isHost = true;
+
+                document.getElementById('roomCodeDisplay').textContent = `PHÒNG: ${code}`;
+                document.getElementById('inputRoomCode').value = code;
+                document.getElementById('hudRoomCodeBadge').textContent = `PHÒNG: ${code}`;
+
+                const initialMembers = {};
+                initialMembers[this.localId] = {
+                    id: this.localId,
+                    name: this.playerName,
+                    heroClass: this.selectedClass,
+                    isHost: true,
+                    updatedAt: Date.now()
+                };
+
+                this.lobbyMembers = initialMembers;
+                this.renderLobbySlots();
+                this.showLobbyToast(`Đã tạo phòng ${code}! Hãy gửi mã này cho bạn bè cùng vào.`);
+
+                // Save to Firestore following RULE 1 & RULE 3
+                if (this.db && this.firebaseUser) {
+                    try {
+                        const roomRef = doc(this.db, 'artifacts', this.appId, 'public', 'data', 'soulknight_rooms', code);
+                        await setDoc(roomRef, {
+                            roomCode: code,
+                            hostId: this.localId,
+                            status: 'lobby',
+                            fillWithBots: this.fillWithBots,
+                            floorLevel: 1,
+                            membersJson: JSON.stringify(initialMembers),
+                            gameStateJson: '',
+                            updatedAt: Date.now()
+                        });
+                        this.subscribeToRoom(code);
+                    } catch (e) {
+                        console.warn("Firestore room create fallback:", e);
+                    }
+                }
+
+                if (this.bc) {
+                    this.bc.postMessage({ type: 'ROOM_UPDATE', roomCode: code, members: initialMembers, fillWithBots: this.fillWithBots });
+                }
+            }
+
+            async joinOnlineRoom() {
+                const input = document.getElementById('inputRoomCode').value.trim().toUpperCase();
+                if (!input || input.length < 4) {
+                    this.showLobbyToast('Vui lòng nhập Mã Phòng hợp lệ (VD: SK8899)!');
+                    return;
+                }
+                this.roomCode = input;
+                this.isHost = false;
+                document.getElementById('roomCodeDisplay').textContent = `PHÒNG: ${input}`;
+                document.getElementById('hudRoomCodeBadge').textContent = `PHÒNG: ${input}`;
+
+                const myMember = {
+                    id: this.localId,
+                    name: this.playerName,
+                    heroClass: this.selectedClass,
+                    isHost: false,
+                    updatedAt: Date.now()
+                };
+
+                if (this.db && this.firebaseUser) {
+                    try {
+                        const roomRef = doc(this.db, 'artifacts', this.appId, 'public', 'data', 'soulknight_rooms', input);
+                        const snap = await getDoc(roomRef);
+                        if (snap.exists()) {
+                            const data = snap.data();
+                            const members = data.membersJson ? JSON.parse(data.membersJson) : {};
+                            members[this.localId] = myMember;
+                            this.lobbyMembers = members;
+                            await updateDoc(roomRef, {
+                                membersJson: JSON.stringify(members),
+                                updatedAt: Date.now()
+                            });
+                            this.subscribeToRoom(input);
+                            this.showLobbyToast(`Đã tham gia phòng ${input} thành công!`);
+                        } else {
+                            // Create if not existing yet so friends can connect seamlessly
+                            const members = { [this.localId]: { ...myMember, isHost: true } };
+                            this.isHost = true;
+                            this.lobbyMembers = members;
+                            await setDoc(roomRef, {
+                                roomCode: input,
+                                hostId: this.localId,
+                                status: 'lobby',
+                                fillWithBots: this.fillWithBots,
+                                floorLevel: 1,
+                                membersJson: JSON.stringify(members),
+                                gameStateJson: '',
+                                updatedAt: Date.now()
+                            });
+                            this.subscribeToRoom(input);
+                            this.showLobbyToast(`Đã mở phòng ${input} và sẵn sàng đón đồng đội!`);
+                        }
+                    } catch (e) {
+                        console.warn("Firestore join fallback:", e);
+                    }
+                }
+
+                if (this.bc) {
+                    this.bc.postMessage({ type: 'JOIN_REQUEST', roomCode: input, member: myMember });
+                }
+                this.renderLobbySlots();
+            }
+
+            subscribeToRoom(code) {
+                if (!this.db || !this.firebaseUser) return;
+                if (this.roomUnsubscribe) this.roomUnsubscribe();
+
+                const roomRef = doc(this.db, 'artifacts', this.appId, 'public', 'data', 'soulknight_rooms', code);
+                this.roomUnsubscribe = onSnapshot(roomRef, (snap) => {
+                    if (!snap.exists()) return;
+                    const data = snap.data();
+                    if (data.membersJson) {
+                        try {
+                            this.lobbyMembers = JSON.parse(data.membersJson);
+                            this.fillWithBots = data.fillWithBots ?? true;
+                            document.getElementById('chkFillBots').checked = this.fillWithBots;
+                            this.renderLobbySlots();
+                        } catch (e) {}
+                    }
+                    // If Host started the game, clients launch into game automatically
+                    if (data.status === 'playing' && !this.inGame && !this.isHost) {
+                        this.launchExpedition(false);
+                    }
+                    // Sync live positions & world state
+                    if (data.gameStateJson && this.inGame) {
+                        try {
+                            const remoteState = JSON.parse(data.gameStateJson);
+                            this.applyRemoteState(remoteState);
+                        } catch (e) {}
+                    }
+                }, (error) => {
+                    console.warn("Room snapshot error:", error);
+                });
+            }
+
+            handleBroadcastMessage(msg) {
+                if (!msg || !msg.roomCode || msg.roomCode !== this.roomCode) return;
+                if (msg.type === 'JOIN_REQUEST' && this.isHost) {
+                    this.lobbyMembers = this.lobbyMembers || {};
+                    this.lobbyMembers[msg.member.id] = msg.member;
+                    this.renderLobbySlots();
+                    this.bc.postMessage({
+                        type: 'ROOM_UPDATE',
+                        roomCode: this.roomCode,
+                        members: this.lobbyMembers,
+                        fillWithBots: this.fillWithBots
+                    });
+                } else if (msg.type === 'ROOM_UPDATE') {
+                    this.lobbyMembers = msg.members;
+                    this.fillWithBots = msg.fillWithBots;
+                    this.renderLobbySlots();
+                } else if (msg.type === 'START_GAME' && !this.inGame) {
+                    this.launchExpedition(false);
+                } else if (msg.type === 'STATE_SYNC' && this.inGame) {
+                    this.applyRemoteState(msg.state);
+                }
+            }
+
+            broadcastNetworkState() {
+                if (!this.roomCode || !this.inGame) return;
+                const now = performance.now();
+                if (now - this.lastSyncSent < 120) return; // ~8.5 syncs/sec for smooth bandwidth
+                this.lastSyncSent = now;
+
+                const myHero = this.players[this.localId];
+                if (!myHero) return;
+
+                const payload = {
+                    senderId: this.localId,
+                    isHost: this.isHost,
+                    hero: {
+                        id: myHero.id,
+                        name: myHero.name,
+                        heroClass: myHero.heroClass,
+                        x: Math.round(myHero.x),
+                        y: Math.round(myHero.y),
+                        aimAngle: Number(myHero.aimAngle.toFixed(2)),
+                        hp: myHero.hp,
+                        maxHp: myHero.maxHp,
+                        armor: myHero.armor,
+                        maxArmor: myHero.maxArmor,
+                        weaponId: myHero.weapons[myHero.activeWeaponIdx],
+                        downed: myHero.downed,
+                        skillActiveTimer: myHero.skillActiveTimer
+                    }
+                };
+
+                if (this.isHost) {
+                    payload.currentRoomIndex = this.currentRoomIndex;
+                    payload.gatesLocked = this.gatesLocked;
+                    payload.teamCoins = this.teamCoins;
+                    payload.enemies = this.enemies.slice(0, 20).map(e => ({
+                        id: e.id,
+                        type: e.type,
+                        x: Math.round(e.x),
+                        y: Math.round(e.y),
+                        hp: e.hp,
+                        maxHp: e.maxHp,
+                        isBoss: e.isBoss,
+                        name: e.name
+                    }));
+                }
+
+                if (this.bc) {
+                    this.bc.postMessage({ type: 'STATE_SYNC', roomCode: this.roomCode, state: payload });
+                }
+
+                if (this.db && this.firebaseUser) {
+                    const roomRef = doc(this.db, 'artifacts', this.appId, 'public', 'data', 'soulknight_rooms', this.roomCode);
+                    updateDoc(roomRef, {
+                        gameStateJson: JSON.stringify(payload),
+                        updatedAt: Date.now()
+                    }).catch(() => {});
+                }
+            }
+
+            applyRemoteState(state) {
+                if (!state || state.senderId === this.localId) return;
+                const h = state.hero;
+                if (h && this.players[h.id]) {
+                    const target = this.players[h.id];
+                    target.targetX = h.x;
+                    target.targetY = h.y;
+                    target.aimAngle = h.aimAngle;
+                    target.hp = h.hp;
+                    target.armor = h.armor;
+                    target.downed = h.downed;
+                    target.weapons[target.activeWeaponIdx] = h.weaponId;
+                }
+            }
+
+            // ------------------------------------------------------------------------
+            // LOBBY & HERO CLASS UI
+            // ------------------------------------------------------------------------
+            initLobbyUI() {
+                this.lobbyMembers = {
+                    [this.localId]: {
+                        id: this.localId,
+                        name: this.playerName,
+                        heroClass: this.selectedClass,
+                        isHost: true
+                    }
+                };
+                this.renderHeroClassCards();
+                this.renderLobbySlots();
+            }
+
+            renderHeroClassCards() {
+                const container = document.getElementById('heroCardsGrid');
+                container.innerHTML = '';
+                Object.values(HERO_CLASSES).forEach(cls => {
+                    const selected = this.selectedClass === cls.id;
+                    const card = document.createElement('div');
+                    card.className = `p-3 rounded-xl border-2 cursor-pointer transition-all flex flex-col justify-between ${
+                        selected
+                            ? 'bg-slate-800/95 border-amber-400 shadow-lg shadow-amber-500/10'
+                            : 'bg-slate-900/70 border-slate-800 hover:border-slate-600'
+                    }`;
+                    card.onclick = () => {
+                        this.selectedClass = cls.id;
+                        this.sfx.play('pickup');
+                        this.updateProfile();
+                        this.renderHeroClassCards();
+                    };
+
+                    const starterWep = WEAPONS[cls.starterWeapon];
+                    card.innerHTML = `
+                        <div>
+                            <div class="flex items-center justify-between mb-1.5">
+                                <div class="flex items-center gap-2">
+                                    <div class="w-9 h-9 rounded-lg flex items-center justify-center text-slate-950 font-bold text-base shadow" style="background:${cls.color}">
+                                        <i class="fa-solid ${cls.icon}"></i>
+                                    </div>
+                                    <div>
+                                        <div class="font-extrabold text-sm text-white flex items-center gap-1.5">
+                                            ${cls.name}
+                                            ${selected ? '<span class="text-[10px] px-1.5 py-0.2 bg-amber-400 text-slate-950 rounded font-black">ĐÃ CHỌN</span>' : ''}
+                                        </div>
+                                        <div class="text-[11px] text-slate-400">${cls.title}</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- Stat Pills -->
+                            <div class="grid grid-cols-3 gap-1 my-2 text-[11px] font-bold text-center">
+                                <div class="bg-slate-950 py-1 rounded border border-slate-800 text-rose-400">
+                                    <i class="fa-solid fa-heart mr-0.5"></i> ${cls.hp} Máu
+                                </div>
+                                <div class="bg-slate-950 py-1 rounded border border-slate-800 text-sky-300">
+                                    <i class="fa-solid fa-shield mr-0.5"></i> ${cls.armor} Giáp
+                                </div>
+                                <div class="bg-slate-950 py-1 rounded border border-slate-800 text-cyan-300">
+                                    <i class="fa-solid fa-bolt mr-0.5"></i> ${cls.energy}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="pt-1.5 border-t border-slate-800/80 text-[11px]">
+                            <div class="text-amber-300 font-bold"><i class="fa-solid fa-wand-magic-sparkles mr-1"></i>Kỹ năng: ${cls.skillName}</div>
+                            <div class="text-slate-400 line-clamp-2 mt-0.5">${cls.skillDesc}</div>
+                            <div class="text-emerald-400 font-semibold mt-1"><i class="fa-solid ${starterWep.icon} mr-1"></i>Vũ khí đầu: ${starterWep.name}</div>
+                        </div>
+                    `;
+                    container.appendChild(card);
+                });
+            }
+
+            updateProfile() {
+                const nameInput = document.getElementById('inputPlayerName');
+                if (nameInput && nameInput.value.trim()) {
+                    this.playerName = nameInput.value.trim();
+                }
+                if (!this.lobbyMembers) this.lobbyMembers = {};
+                this.lobbyMembers[this.localId] = {
+                    id: this.localId,
+                    name: this.playerName,
+                    heroClass: this.selectedClass,
+                    isHost: this.isHost
+                };
+                this.renderLobbySlots();
+
+                if (this.roomCode && this.db && this.firebaseUser) {
+                    const roomRef = doc(this.db, 'artifacts', this.appId, 'public', 'data', 'soulknight_rooms', this.roomCode);
+                    updateDoc(roomRef, {
+                        membersJson: JSON.stringify(this.lobbyMembers),
+                        updatedAt: Date.now()
+                    }).catch(() => {});
+                }
+                if (this.roomCode && this.bc) {
+                    this.bc.postMessage({ type: 'ROOM_UPDATE', roomCode: this.roomCode, members: this.lobbyMembers, fillWithBots: this.fillWithBots });
+                }
+            }
+
+            toggleBotFill() {
+                this.fillWithBots = document.getElementById('chkFillBots').checked;
+                this.renderLobbySlots();
+            }
+
+            renderLobbySlots() {
+                const container = document.getElementById('lobbySquadSlots');
+                if (!container) return;
+                container.innerHTML = '';
+
+                const membersList = Object.values(this.lobbyMembers || {});
+                const allClassKeys = Object.keys(HERO_CLASSES);
+                const botNames = ['Bot Hiệp Sĩ', 'Bot Sát Thủ', 'Bot Pháp Sư', 'Bot Kỹ Sư'];
+
+                for (let slot = 0; slot < 4; slot++) {
+                    const realMember = membersList[slot];
+                    const row = document.createElement('div');
+
+                    if (realMember) {
+                        const cls = HERO_CLASSES[realMember.heroClass] || HERO_CLASSES.knight;
+                        const isMe = realMember.id === this.localId;
+                        row.className = `flex items-center justify-between p-2.5 rounded-xl border ${
+                            isMe ? 'bg-slate-800/90 border-amber-400/70' : 'bg-slate-900/90 border-slate-700'
+                        }`;
+                        row.innerHTML = `
+                            <div class="flex items-center gap-2.5">
+                                <div class="w-8 h-8 rounded-lg flex items-center justify-center text-slate-950 font-bold text-sm" style="background:${cls.color}">
+                                    <i class="fa-solid ${cls.icon}"></i>
+                                </div>
+                                <div>
+                                    <div class="text-xs font-extrabold text-white flex items-center gap-1.5">
+                                        ${realMember.name}
+                                        ${isMe ? '<span class="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 rounded border border-amber-500/40">BẠN</span>' : ''}
+                                        ${slot === 0 ? '<span class="text-[10px] bg-indigo-500/20 text-indigo-300 px-1.5 rounded">CHỦ PHÒNG</span>' : ''}
+                                    </div>
+                                    <div class="text-[11px] text-slate-400">${cls.name} • Kỹ năng: ${cls.skillName}</div>
+                                </div>
+                            </div>
+                            <span class="text-[11px] font-bold text-emerald-400 flex items-center gap-1">
+                                <i class="fa-solid fa-circle-check"></i> Sẵn sàng
+                            </span>
+                        `;
+                    } else if (this.fillWithBots) {
+                        const botClassKey = allClassKeys[slot % allClassKeys.length];
+                        const cls = HERO_CLASSES[botClassKey];
+                        row.className = 'flex items-center justify-between p-2.5 rounded-xl border border-slate-800 bg-slate-900/50';
+                        row.innerHTML = `
+                            <div class="flex items-center gap-2.5">
+                                <div class="w-8 h-8 rounded-lg flex items-center justify-center text-slate-950 font-bold text-sm opacity-85" style="background:${cls.color}">
+                                    <i class="fa-solid ${cls.icon}"></i>
+                                </div>
+                                <div>
+                                    <div class="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                                        ${botNames[slot]}
+                                        <span class="text-[10px] bg-cyan-500/20 text-cyan-300 px-1.5 rounded border border-cyan-500/30">AI ĐỒNG ĐỘI</span>
+                                    </div>
+                                    <div class="text-[11px] text-slate-500">${cls.name} • Tự động hỗ trợ & cứu bồ</div>
+                                </div>
+                            </div>
+                            <span class="text-[11px] text-cyan-400 font-semibold"><i class="fa-solid fa-robot mr-1"></i>Bot</span>
+                        `;
+                    } else {
+                        row.className = 'flex items-center justify-between p-2.5 rounded-xl border border-dashed border-slate-800 bg-slate-950/40 text-slate-500';
+                        row.innerHTML = `
+                            <div class="flex items-center gap-2.5">
+                                <div class="w-8 h-8 rounded-lg bg-slate-900 flex items-center justify-center">
+                                    <i class="fa-solid fa-user-plus text-xs"></i>
+                                </div>
+                                <span class="text-xs">Đang chờ người chơi Wi-Fi vào slot #${slot + 1}...</span>
+                            </div>
+                        `;
+                    }
+                    container.appendChild(row);
+                }
+            }
+
+            startQuickFourPlayer() {
+                this.fillWithBots = true;
+                document.getElementById('chkFillBots').checked = true;
+                this.startGameFromLobby();
+            }
+
+            async startGameFromLobby() {
+                this.updateProfile();
+                if (this.roomCode && this.db && this.firebaseUser && this.isHost) {
+                    const roomRef = doc(this.db, 'artifacts', this.appId, 'public', 'data', 'soulknight_rooms', this.roomCode);
+                    updateDoc(roomRef, { status: 'playing', updatedAt: Date.now() }).catch(() => {});
+                }
+                if (this.roomCode && this.bc) {
+                    this.bc.postMessage({ type: 'START_GAME', roomCode: this.roomCode });
+                }
+                this.launchExpedition(true);
+            }
+
+            // ------------------------------------------------------------------------
+            // PROCEDURAL DUNGEON & SQUAD INITIALIZATION
+            // ------------------------------------------------------------------------
+            launchExpedition(resetStats = true) {
+                this.sfx.init();
+                this.sfx.play('skill');
+                document.getElementById('lobbyModal').classList.add('hidden');
+                document.getElementById('endModal').classList.add('hidden');
+                document.getElementById('buffModal').classList.add('hidden');
+                document.getElementById('hudOverlay').classList.remove('hidden');
+
+                if (resetStats) {
+                    this.floorLevel = 1;
+                    this.totalKills = 0;
+                    this.teamCoins = 0;
+                    this.activeBuffs = new Set();
+                    this.spawnSquadPlayers();
+                }
+
+                this.generateDungeonFloor(this.floorLevel);
+                this.inGame = true;
+                this.updateHud();
+            }
+
+            spawnSquadPlayers() {
+                this.players = {};
+                const membersList = Object.values(this.lobbyMembers || {});
+                const allClassKeys = Object.keys(HERO_CLASSES);
+                const botNames = ['Bot Hiệp Sĩ', 'Bot Sát Thủ', 'Bot Pháp Sư', 'Bot Kỹ Sư'];
+
+                const totalSlots = this.fillWithBots ? 4 : Math.max(1, membersList.length);
+
+                for (let i = 0; i < totalSlots; i++) {
+                    const real = membersList[i];
+                    const id = real ? real.id : `bot_${i}`;
+                    const heroClassKey = real ? real.heroClass : allClassKeys[i % allClassKeys.length];
+                    const cls = HERO_CLASSES[heroClassKey] || HERO_CLASSES.knight;
+                    const isBot = !real;
+
+                    const angle = (i / totalSlots) * Math.PI * 2;
+                    const spawnX = Math.cos(angle) * 70;
+                    const spawnY = Math.sin(angle) * 70;
+
+                    this.players[id] = {
+                        id,
+                        name: real ? real.name : botNames[i],
+                        heroClass: cls.id,
+                        isBot,
+                        isLocal: id === this.localId,
+                        x: spawnX,
+                        y: spawnY,
+                        targetX: spawnX,
+                        targetY: spawnY,
+                        vx: 0,
+                        vy: 0,
+                        radius: 18,
+                        hp: cls.hp,
+                        maxHp: cls.hp,
+                        armor: cls.armor,
+                        maxArmor: cls.armor,
+                        energy: cls.energy,
+                        maxEnergy: cls.energy,
+                        speed: cls.speed,
+                        color: cls.color,
+                        visorColor: cls.visorColor,
+                        capeColor: cls.capeColor,
+                        weapons: [cls.starterWeapon, null],
+                        activeWeaponIdx: 0,
+                        aimAngle: 0,
+                        fireCooldown: 0,
+                        skillCooldown: 0,
+                        maxSkillCd: cls.skillCd,
+                        skillActiveTimer: 0,
+                        lastDamageTakenTime: 0,
+                        armorRegenAccum: 0,
+                        downed: false,
+                        reviveProgress: 0,
+                        dashTimer: 0,
+                        dashVx: 0,
+                        dashVy: 0,
+                        meleeSwingTimer: 0,
+                        meleeSwingDir: 1
+                    };
+                }
+            }
+
+            generateDungeonFloor(floor) {
+                this.enemies = [];
+                this.bullets = [];
+                this.particles = [];
+                this.floatingTexts = [];
+                this.turrets = [];
+                this.crates = [];
+                this.chests = [];
+                this.groundLoots = [];
+                this.portal = null;
+                this.gatesLocked = false;
+                this.currentRoomIndex = 0;
+
+                const step = this.roomSize + this.corridorLength;
+
+                // 5 Connected Rooms layout:
+                // [0] Spawn (0,0) -> [1] Combat 1 (1,0) -> [2] Treasure Room (1,-1) -> [3] Combat 2 (2,0) -> [4] Boss Room (3,0)
+                this.rooms = [
+                    { index: 0, gx: 0, gy: 0, x: 0, y: 0, type: 'spawn', name: 'Phòng Khởi Đầu', cleared: true, visited: true, wave: 0, maxWaves: 0, neighbors: [1] },
+                    { index: 1, gx: 1, gy: 0, x: step, y: 0, type: 'combat', name: 'Phòng Chiến Đấu I', cleared: false, visited: false, wave: 0, maxWaves: 2, neighbors: [0, 2, 3] },
+                    { index: 2, gx: 1, gy: -1, x: step, y: -step, type: 'treasure', name: 'Phòng Kho Báu Bí Ẩn', cleared: true, visited: false, wave: 0, maxWaves: 0, neighbors: [1] },
+                    { index: 3, gx: 2, gy: 0, x: step * 2, y: 0, type: 'combat', name: 'Phòng Chiến Đấu Tinh Anh', cleared: false, visited: false, wave: 0, maxWaves: 2, neighbors: [1, 4] },
+                    { index: 4, gx: 3, gy: 0, x: step * 3, y: 0, type: 'boss', name: 'Phòng Đại Boss Hầm Ngục', cleared: false, visited: false, wave: 0, maxWaves: 1, neighbors: [3] }
+                ];
+
+                // Place players in Spawn Room (0,0)
+                const playerArr = Object.values(this.players);
+                playerArr.forEach((p, idx) => {
+                    const ang = (idx / playerArr.length) * Math.PI * 2;
+                    p.x = Math.cos(ang) * 75;
+                    p.y = Math.sin(ang) * 75;
+                    p.targetX = p.x;
+                    p.targetY = p.y;
+                    p.downed = false;
+                    p.hp = Math.max(p.hp, Math.ceil(p.maxHp * 0.6));
+                    p.armor = p.maxArmor;
+                });
+
+                // Spawn starter chest in Room 0 & Golden chest in Room 2
+                this.chests.push({
+                    id: 'chest_spawn',
+                    x: 0,
+                    y: -140,
+                    opened: false,
+                    tier: 'normal'
+                });
+                this.chests.push({
+                    id: 'chest_treasure',
+                    x: this.rooms[2].x,
+                    y: this.rooms[2].y,
+                    opened: false,
+                    tier: 'gold'
+                });
+
+                // Populate destructible crates, explosive barrels & stone pillars in Combat & Boss rooms
+                this.rooms.forEach(rm => {
+                    if (rm.type === 'combat' || rm.type === 'boss') {
+                        // 4 symmetrical stone pillars
+                        const offset = 210;
+                        const pillarCoords = [
+                            [rm.x - offset, rm.y - offset],
+                            [rm.x + offset, rm.y - offset],
+                            [rm.x - offset, rm.y + offset],
+                            [rm.x + offset, rm.y + offset]
+                        ];
+                        pillarCoords.forEach(([px, py]) => {
+                            this.crates.push({ x: px, y: py, size: 54, hp: 9999, indestructible: true, type: 'pillar' });
+                        });
+
+                        // Destructible wooden boxes & red explosive barrels
+                        for (let i = 0; i < 9; i++) {
+                            const cx = rm.x + (Math.random() - 0.5) * (this.roomSize - 240);
+                            const cy = rm.y + (Math.random() - 0.5) * (this.roomSize - 240);
+                            if (Math.hypot(cx - rm.x, cy - rm.y) > 90) {
+                                const isBarrel = Math.random() < 0.32;
+                                this.crates.push({
+                                    x: cx,
+                                    y: cy,
+                                    size: 38,
+                                    hp: isBarrel ? 18 : 25,
+                                    indestructible: false,
+                                    type: isBarrel ? 'barrel' : 'wood'
+                                });
+                            }
+                        }
+                    }
+                });
+
+                document.getElementById('hudFloorText').textContent = `Tầng ${this.floorLevel}-1 • Hầm Ngục Tối`;
+                this.renderBuffHudIcons();
+            }
+
+            // ------------------------------------------------------------------------
+            // WAVE & BOSS SPAWNING
+            // ------------------------------------------------------------------------
+            triggerRoomWave(room) {
+                room.wave++;
+                this.gatesLocked = true;
+                this.sfx.play('skill');
+
+                const banner = document.getElementById('hudRoomTitle');
+                const dot = document.getElementById('hudRoomStateDot');
+                dot.className = 'w-2.5 h-2.5 rounded-full bg-red-500 animate-ping';
+
+                if (room.type === 'boss') {
+                    banner.textContent = `CẢNH BÁO: BOSS XUẤT HIỆN!`;
+                    this.spawnFloorBoss(room);
+                    return;
+                }
+
+                banner.textContent = `${room.name} • Đợt Quái ${room.wave}/${room.maxWaves}`;
+                const count = 5 + this.floorLevel * 2 + room.wave * 2;
+                const enemyTypes = ['goblin', 'archer', 'slime', 'mage', 'charger'];
+
+                for (let i = 0; i < count; i++) {
+                    const ang = (i / count) * Math.PI * 2 + Math.random() * 0.4;
+                    const dist = 160 + Math.random() * 210;
+                    const ex = room.x + Math.cos(ang) * dist;
+                    const ey = room.y + Math.sin(ang) * dist;
+                    const type = enemyTypes[Math.floor(Math.random() * enemyTypes.length)];
+                    this.spawnEnemy(type, ex, ey, room.index);
+                }
+            }
+
+            spawnEnemy(type, x, y, roomIndex) {
+                const scale = 1 + (this.floorLevel - 1) * 0.35;
+                const templates = {
+                    goblin: { name: 'Yêu Tinh Giáo', hp: 32, speed: 2.3, radius: 17, color: '#4ade80', fireRate: 1.4, score: 10 },
+                    archer: { name: 'Xương Cung Thủ', hp: 26, speed: 1.9, radius: 16, color: '#e2e8f0', fireRate: 1.2, score: 12 },
+                    slime: { name: 'Slime Độc', hp: 42, speed: 2.6, radius: 19, color: '#a855f7', fireRate: 1.7, score: 14 },
+                    mage: { name: 'Phù Thủy Hắc Ám', hp: 36, speed: 1.8, radius: 18, color: '#f43f5e', fireRate: 1.5, score: 18 },
+                    charger: { name: 'Giáp Sắt Húc', hp: 55, speed: 3.1, radius: 21, color: '#f97316', fireRate: 1.9, score: 20 }
+                };
+                const t = templates[type] || templates.goblin;
+                this.enemies.push({
+                    id: 'e_' + Math.random().toString(36).substring(2, 9),
+                    type,
+                    name: t.name,
+                    roomIndex,
+                    x,
+                    y,
+                    vx: 0,
+                    vy: 0,
+                    radius: t.radius,
+                    hp: Math.round(t.hp * scale),
+                    maxHp: Math.round(t.hp * scale),
+                    speed: t.speed,
+                    color: t.color,
+                    fireTimer: 0.6 + Math.random() * 1.2,
+                    fireRate: t.fireRate,
+                    stunTimer: 0,
+                    chillTimer: 0,
+                    isBoss: false
+                });
+                this.spawnBurstParticles(x, y, '#c084fc', 10);
+            }
+
+            spawnFloorBoss(room) {
+                const bosses = [
+                    { name: 'QUỶ VƯƠNG HỎA NGỤC', color: '#ef4444', hp: 850 },
+                    { name: 'CỰ NHÂN ĐÁ CỔ ĐẠI', color: '#f59e0b', hp: 1150 },
+                    { name: 'ĐẠI PHÙ THỦY HƯ KHÔNG', color: '#a855f7', hp: 1450 }
+                ];
+                const b = bosses[(this.floorLevel - 1) % bosses.length];
+                this.enemies.push({
+                    id: 'boss_' + this.floorLevel,
+                    type: 'boss',
+                    name: b.name,
+                    roomIndex: room.index,
+                    x: room.x,
+                    y: room.y - 80,
+                    vx: 0,
+                    vy: 0,
+                    radius: 42,
+                    hp: b.hp,
+                    maxHp: b.hp,
+                    speed: 2.1,
+                    color: b.color,
+                    fireTimer: 1.2,
+                    fireRate: 1.1,
+                    patternIndex: 0,
+                    stunTimer: 0,
+                    chillTimer: 0,
+                    isBoss: true
+                });
+
+                document.getElementById('hudBossContainer').classList.remove('hidden');
+                document.getElementById('hudBossName').innerHTML = `<i class="fa-solid fa-skull text-red-400"></i> ${b.name}`;
+            }
+
+            // ------------------------------------------------------------------------
+            // PLAYER ACTIONS: SHOOTING, SKILLS, WEAPON SWAP, INTERACT/REVIVE
+            // ------------------------------------------------------------------------
+            swapWeapon() {
+                const me = this.players[this.localId];
+                if (!me || me.downed) return;
+                if (me.weapons[1]) {
+                    me.activeWeaponIdx = me.activeWeaponIdx === 0 ? 1 : 0;
+                    this.sfx.play('pickup');
+                    this.addFloatingText(me.x, me.y - 26, WEAPONS[me.weapons[me.activeWeaponIdx]].name, '#fde047');
+                    this.updateHud();
+                }
+            }
+
+            useSkill() {
+                const me = this.players[this.localId];
+                if (!me || me.downed || me.skillCooldown > 0) return;
+                this.triggerHeroSkill(me);
+            }
+
+            triggerHeroSkill(hero) {
+                const hasteMult = this.activeBuffs?.has('haste') ? 0.75 : 1.0;
+                hero.skillCooldown = hero.maxSkillCd * hasteMult;
+                this.sfx.play('skill');
+
+                if (hero.heroClass === 'knight') {
+                    // Dual Wield for 5 seconds
+                    hero.skillActiveTimer = 5.0;
+                    this.addFloatingText(hero.x, hero.y - 30, 'SONG HỎA!', '#f59e0b');
+                    this.spawnBurstParticles(hero.x, hero.y, '#f59e0b', 18);
+                } else if (hero.heroClass === 'assassin') {
+                    // Shadow Dash slice
+                    hero.dashTimer = 0.32;
+                    hero.skillActiveTimer = 0.8;
+                    const ang = hero.aimAngle;
+                    hero.dashVx = Math.cos(ang) * 16;
+                    hero.dashVy = Math.sin(ang) * 16;
+                    this.addFloatingText(hero.x, hero.y - 30, 'ẢNH TRẢM!', '#c084fc');
+                    this.spawnBurstParticles(hero.x, hero.y, '#a855f7', 20);
+
+                    // Slice nearby enemies & clear enemy bullets
+                    this.enemies.forEach(e => {
+                        if (Math.hypot(e.x - hero.x, e.y - hero.y) < 165) {
+                            this.damageEnemy(e, 38, hero);
+                        }
+                    });
+                    this.bullets = this.bullets.filter(b => b.fromPlayer || Math.hypot(b.x - hero.x, b.y - hero.y) > 150);
+                } else if (hero.heroClass === 'wizard') {
+                    // Chain Lightning across up to 5 enemies
+                    this.addFloatingText(hero.x, hero.y - 30, 'LÔI PHẠT!', '#38bdf8');
+                    let targets = [...this.enemies]
+                        .filter(e => Math.hypot(e.x - hero.x, e.y - hero.y) < 460)
+                        .sort((a, b) => Math.hypot(a.x - hero.x, a.y - hero.y) - Math.hypot(b.x - hero.x, b.y - hero.y))
+                        .slice(0, 5);
+
+                    let prevX = hero.x;
+                    let prevY = hero.y;
+                    targets.forEach(t => {
+                        this.damageEnemy(t, 30, hero);
+                        t.stunTimer = 2.0;
+                        this.spawnLightningArc(prevX, prevY, t.x, t.y);
+                        prevX = t.x;
+                        prevY = t.y;
+                    });
+                    if (targets.length === 0) {
+                        this.spawnLightningArc(hero.x, hero.y, hero.x + Math.cos(hero.aimAngle) * 180, hero.y + Math.sin(hero.aimAngle) * 180);
+                    }
+                } else if (hero.heroClass === 'engineer') {
+                    // Deploy Auto-Turret + Shield/Heal Aura
+                    this.addFloatingText(hero.x, hero.y - 30, 'THÁP PHÁO HỘ VỆ!', '#10b981');
+                    this.turrets.push({
+                        x: hero.x + Math.cos(hero.aimAngle) * 36,
+                        y: hero.y + Math.sin(hero.aimAngle) * 36,
+                        ownerId: hero.id,
+                        life: 10.0,
+                        fireTimer: 0.2,
+                        pulseTimer: 1.5
+                    });
+                    this.spawnBurstParticles(hero.x, hero.y, '#10b981', 18);
+                }
+            }
+
+            fireWeapon(hero) {
+                const wepId = hero.weapons[hero.activeWeaponIdx] || 'pistol';
+                const wep = WEAPONS[wepId] || WEAPONS.pistol;
+
+                const isDual = hero.heroClass === 'knight' && hero.skillActiveTimer > 0;
+                const hasteMult = this.activeBuffs?.has('haste') ? 0.78 : 1.0;
+                const rate = wep.fireRate * (isDual ? 0.65 : 1.0) * hasteMult;
+
+                if (hero.fireCooldown > 0) return;
+                if (hero.energy < wep.cost) {
+                    // Fallback to free melee/weak shot if out of energy
+                    if (wep.cost > 0) {
+                        this.addFloatingText(hero.x, hero.y - 25, 'Hết Mana!', '#38bdf8');
+                        hero.fireCooldown = 0.35;
+                        return;
+                    }
+                }
+
+                hero.energy = Math.max(0, hero.energy - wep.cost);
+                hero.fireCooldown = rate;
+
+                const shots = isDual ? 2 : 1;
+                const dmgBonus = this.activeBuffs?.has('bounce') ? 1.2 : 1.0;
+
+                for (let s = 0; s < shots; s++) {
+                    const lateralOffset = shots === 2 ? (s === 0 ? -9 : 9) : 0;
+                    const spawnX = hero.x + Math.cos(hero.aimAngle + Math.PI / 2) * lateralOffset;
+                    const spawnY = hero.y + Math.sin(hero.aimAngle + Math.PI / 2) * lateralOffset;
+
+                    if (wep.type === 'melee') {
+                        this.sfx.play('sword');
+                        hero.meleeSwingTimer = 0.18;
+                        hero.meleeSwingDir *= -1;
+                        // Slash arc damages enemies & destroys enemy bullets!
+                        this.enemies.forEach(e => {
+                            const dist = Math.hypot(e.x - hero.x, e.y - hero.y);
+                            if (dist < wep.size + e.radius + 16) {
+                                this.damageEnemy(e, Math.round(wep.damage * dmgBonus), hero);
+                            }
+                        });
+                        this.bullets.forEach(b => {
+                            if (!b.fromPlayer && Math.hypot(b.x - hero.x, b.y - hero.y) < wep.size + 22) {
+                                b.fromPlayer = true;
+                                b.vx = -b.vx * 1.4;
+                                b.vy = -b.vy * 1.4;
+                                b.color = '#38bdf8';
+                                b.damage = 14;
+                            }
+                        });
+                    } else {
+                        this.sfx.play(wep.type === 'laser' ? 'laser' : 'shoot');
+                        for (let i = 0; i < wep.count; i++) {
+                            const spreadAngle = hero.aimAngle + (Math.random() - 0.5) * wep.spread;
+                            this.bullets.push({
+                                x: spawnX + Math.cos(spreadAngle) * 18,
+                                y: spawnY + Math.sin(spreadAngle) * 18,
+                                vx: Math.cos(spreadAngle) * wep.speed,
+                                vy: Math.sin(spreadAngle) * wep.speed,
+                                radius: wep.size,
+                                color: wep.color,
+                                damage: Math.round(wep.damage * dmgBonus),
+                                fromPlayer: true,
+                                ownerId: hero.id,
+                                type: wep.type,
+                                pierce: !!wep.pierce,
+                                bounces: this.activeBuffs?.has('bounce') ? 1 : 0,
+                                life: wep.type === 'laser' ? 0.45 : 2.2
+                            });
+                        }
+                    }
+                }
+            }
+
+            triggerInteract() {
+                const me = this.players[this.localId];
+                if (!me || me.downed) return;
+
+                // 1. Check downed teammates to revive
+                for (const p of Object.values(this.players)) {
+                    if (p.id !== me.id && p.downed && Math.hypot(p.x - me.x, p.y - me.y) < 75) {
+                        p.downed = false;
+                        p.hp = Math.ceil(p.maxHp * 0.5);
+                        p.armor = p.maxArmor;
+                        this.sfx.play('skill');
+                        this.addFloatingText(p.x, p.y - 30, 'ĐÃ CỨU SỐNG!', '#4ade80');
+                        this.spawnBurstParticles(p.x, p.y, '#4ade80', 20);
+                        return;
+                    }
+                }
+
+                // 2. Check unopened chests
+                for (const c of this.chests) {
+                    if (!c.opened && Math.hypot(c.x - me.x, c.y - me.y) < 75) {
+                        this.openTreasureChest(c);
+                        return;
+                    }
+                }
+
+                // 3. Check ground weapons / potions
+                for (let i = this.groundLoots.length - 1; i >= 0; i--) {
+                    const item = this.groundLoots[i];
+                    if (Math.hypot(item.x - me.x, item.y - me.y) < 68) {
+                        this.pickupLootItem(me, item, i);
+                        return;
+                    }
+                }
+
+                // 4. Check Portal to next floor
+                if (this.portal && Math.hypot(this.portal.x - me.x, this.portal.y - me.y) < 80) {
+                    this.enterPortal();
+                }
+            }
+
+            openTreasureChest(chest) {
+                chest.opened = true;
+                this.sfx.play('pickup');
+                this.spawnBurstParticles(chest.x, chest.y, '#fbbf24', 22);
+
+                const weaponPool = ['smg', 'shotgun', 'railgun', 'firestaff', 'katana', 'frostbow'];
+                const chosenWep = weaponPool[Math.floor(Math.random() * weaponPool.length)];
+
+                this.groundLoots.push({
+                    x: chest.x - 24,
+                    y: chest.y + 20,
+                    kind: 'weapon',
+                    weaponId: chosenWep
+                });
+                this.groundLoots.push({
+                    x: chest.x + 28,
+                    y: chest.y + 20,
+                    kind: 'potion_hp'
+                });
+                this.groundLoots.push({
+                    x: chest.x,
+                    y: chest.y + 38,
+                    kind: 'potion_mana'
+                });
+            }
+
+            pickupLootItem(hero, item, idx) {
+                this.sfx.play('pickup');
+                if (item.kind === 'weapon') {
+                    const wep = WEAPONS[item.weaponId];
+                    if (!hero.weapons[1]) {
+                        hero.weapons[1] = item.weaponId;
+                        hero.activeWeaponIdx = 1;
+                    } else {
+                        const dropped = hero.weapons[hero.activeWeaponIdx];
+                        hero.weapons[hero.activeWeaponIdx] = item.weaponId;
+                        item.weaponId = dropped;
+                        this.addFloatingText(hero.x, hero.y - 28, `Nhặt: ${wep.name}`, '#fbbf24');
+                        this.updateHud();
+                        return;
+                    }
+                    this.addFloatingText(hero.x, hero.y - 28, `Nhặt: ${wep.name}`, '#fbbf24');
+                } else if (item.kind === 'potion_hp') {
+                    hero.hp = Math.min(hero.maxHp, hero.hp + 3);
+                    this.addFloatingText(hero.x, hero.y - 28, '+3 MÁU', '#f43f5e');
+                } else if (item.kind === 'potion_mana') {
+                    hero.energy = Math.min(hero.maxEnergy, hero.energy + 80);
+                    this.addFloatingText(hero.x, hero.y - 28, '+80 MANA', '#38bdf8');
+                }
+                this.groundLoots.splice(idx, 1);
+                this.updateHud();
+            }
+
+            enterPortal() {
+                this.sfx.play('skill');
+                if (this.floorLevel >= 3) {
+                    // Completed full 3-floor dungeon!
+                    this.showEndScreen(true);
+                    return;
+                }
+                // Show Soul Knight Buff selection modal before next floor
+                this.openBuffSelectionModal();
+            }
+
+            openBuffSelectionModal() {
+                this.inGame = false;
+                const modal = document.getElementById('buffModal');
+                const container = document.getElementById('buffChoicesContainer');
+                container.innerHTML = '';
+
+                const shuffled = [...DUNGEON_BUFFS].sort(() => Math.random() - 0.5).slice(0, 3);
+                shuffled.forEach(buff => {
+                    const card = document.createElement('button');
+                    card.className = 'sk-panel p-4 rounded-xl bg-slate-800 hover:bg-slate-700 border-2 border-slate-600 hover:border-amber-400 transition-all flex flex-col items-center text-center group';
+                    card.onclick = () => this.selectDungeonBuff(buff);
+                    card.innerHTML = `
+                        <div class="w-12 h-12 rounded-xl bg-slate-950 flex items-center justify-center mb-2 border border-slate-700 group-hover:scale-110 transition-transform">
+                            <i class="fa-solid ${buff.icon} text-2xl ${buff.color}"></i>
+                        </div>
+                        <div class="font-extrabold text-sm text-white mb-1">${buff.name}</div>
+                        <div class="text-xs text-slate-300">${buff.desc}</div>
+                    `;
+                    container.appendChild(card);
+                });
+                modal.classList.remove('hidden');
+            }
+
+            selectDungeonBuff(buff) {
+                this.activeBuffs.add(buff.id);
+                this.sfx.play('pickup');
+
+                Object.values(this.players).forEach(p => {
+                    if (buff.id === 'max_armor') {
+                        p.maxArmor += 3;
+                        p.armor = p.maxArmor;
+                    } else if (buff.id === 'mana_spring') {
+                        p.maxEnergy += 80;
+                        p.energy = p.maxEnergy;
+                    }
+                });
+
+                document.getElementById('buffModal').classList.add('hidden');
+                this.floorLevel++;
+                this.generateDungeonFloor(this.floorLevel);
+                this.inGame = true;
+            }
+
+            renderBuffHudIcons() {
+                const el = document.getElementById('hudBuffIcons');
+                if (!el) return;
+                el.innerHTML = '';
+                if (!this.activeBuffs) return;
+                DUNGEON_BUFFS.forEach(b => {
+                    if (this.activeBuffs.has(b.id)) {
+                        const badge = document.createElement('div');
+                        badge.className = 'w-7 h-7 rounded-lg bg-slate-900/90 border border-amber-400/50 flex items-center justify-center text-xs shadow';
+                        badge.title = `${b.name}: ${b.desc}`;
+                        badge.innerHTML = `<i class="fa-solid ${b.icon} ${b.color}"></i>`;
+                        el.appendChild(badge);
+                    }
+                });
+            }
+
+            // ------------------------------------------------------------------------
+            // MAIN UPDATE LOOP (PHYSICS, AI, COMBAT, COLLISIONS)
+            // ------------------------------------------------------------------------
+            loop(timestamp) {
+                const dt = Math.min(0.05, (timestamp - this.lastTime) / 1000);
+                this.lastTime = timestamp;
+
+                if (this.inGame) {
+                    this.update(dt);
+                    this.render();
+                    this.broadcastNetworkState();
+                } else {
+                    this.renderBackgroundPreview(timestamp);
+                }
+
+                requestAnimationFrame((t) => this.loop(t));
+            }
+
+            update(dt) {
+                const me = this.players[this.localId];
+                if (!me) return;
+
+                if (this.screenShake > 0) this.screenShake = Math.max(0, this.screenShake - dt * 25);
+
+                // 1. Update Local Player Movement
+                if (!me.downed) {
+                    let mvX = 0;
+                    let mvY = 0;
+                    if (this.keys['KeyW'] || this.keys['ArrowUp']) mvY -= 1;
+                    if (this.keys['KeyS'] || this.keys['ArrowDown']) mvY += 1;
+                    if (this.keys['KeyA'] || this.keys['ArrowLeft']) mvX -= 1;
+                    if (this.keys['KeyD'] || this.keys['ArrowRight']) mvX += 1;
+
+                    if (this.joy.active) {
+                        mvX = this.joy.dx;
+                        mvY = this.joy.dy;
+                    } else if (mvX !== 0 || mvY !== 0) {
+                        const len = Math.hypot(mvX, mvY);
+                        mvX /= len;
+                        mvY /= len;
+                    }
+
+                    if (me.dashTimer > 0) {
+                        me.dashTimer -= dt;
+                        this.moveEntityWithCollision(me, me.dashVx, me.dashVy);
+                    } else {
+                        this.moveEntityWithCollision(me, mvX * me.speed, mvY * me.speed);
+                    }
+
+                    // Soul Knight Auto-Aim towards nearest visible enemy, or manual mouse override
+                    const nearestEnemy = this.findNearestEnemy(me.x, me.y, 520);
+                    if (nearestEnemy && (!this.mouse.down || this.touchFiring)) {
+                        me.aimAngle = Math.atan2(nearestEnemy.y - me.y, nearestEnemy.x - me.x);
+                        this.lockedEnemy = nearestEnemy;
+                    } else if (nearestEnemy) {
+                        this.lockedEnemy = nearestEnemy;
+                        me.aimAngle = Math.atan2(nearestEnemy.y - me.y, nearestEnemy.x - me.x);
+                    } else {
+                        this.lockedEnemy = null;
+                        if (Math.hypot(mvX, mvY) > 0.1) {
+                            me.aimAngle = Math.atan2(mvY, mvX);
+                        } else {
+                            me.aimAngle = Math.atan2(this.mouse.worldY - me.y, this.mouse.worldX - me.x);
+                        }
+                    }
+
+                    // Firing trigger
+                    if (this.mouse.down || this.touchFiring || this.keys['KeyJ'] || this.keys['Space']) {
+                        this.fireWeapon(me);
+                    }
+                }
+
+                // 2. Update All Players (Cooldowns, Armor Regen, AI Bots, Revives)
+                Object.values(this.players).forEach(p => {
+                    if (p.fireCooldown > 0) p.fireCooldown -= dt;
+                    if (p.skillCooldown > 0) p.skillCooldown = Math.max(0, p.skillCooldown - dt);
+                    if (p.skillActiveTimer > 0) p.skillActiveTimer = Math.max(0, p.skillActiveTimer - dt);
+                    if (p.meleeSwingTimer > 0) p.meleeSwingTimer = Math.max(0, p.meleeSwingTimer - dt);
+
+                    // Passive mana spring buff
+                    if (this.activeBuffs?.has('mana_spring') && !p.downed) {
+                        p.energy = Math.min(p.maxEnergy, p.energy + dt * 3);
+                    }
+
+                    // Soul Knight Signature Armor Auto-Regeneration after 3.5s out of combat
+                    const regenDelay = this.activeBuffs?.has('max_armor') ? 2.3 : 3.5;
+                    if (!p.downed && p.armor < p.maxArmor && (performance.now() / 1000 - p.lastDamageTakenTime) > regenDelay) {
+                        p.armorRegenAccum += dt;
+                        if (p.armorRegenAccum >= 0.85) {
+                            p.armorRegenAccum = 0;
+                            p.armor = Math.min(p.maxArmor, p.armor + 1);
+                        }
+                    }
+
+                    // AI Companion Bot Logic
+                    if (p.isBot && !p.downed) {
+                        this.updateCompanionBot(p, me, dt);
+                    } else if (!p.isLocal && !p.isBot) {
+                        // Smooth interpolation for remote Wi-Fi teammates
+                        p.x += (p.targetX - p.x) * 0.25;
+                        p.y += (p.targetY - p.y) * 0.25;
+                    }
+                });
+
+                // 3. Check Room Detection & Wave Trigger
+                this.checkRoomState(me);
+
+                // 4. Update Turrets (Engineer Skill)
+                for (let i = this.turrets.length - 1; i >= 0; i--) {
+                    const t = this.turrets[i];
+                    t.life -= dt;
+                    t.fireTimer -= dt;
+                    t.pulseTimer -= dt;
+
+                    if (t.fireTimer <= 0) {
+                        const target = this.findNearestEnemy(t.x, t.y, 420);
+                        if (target) {
+                            t.fireTimer = 0.28;
+                            const ang = Math.atan2(target.y - t.y, target.x - t.x);
+                            this.bullets.push({
+                                x: t.x,
+                                y: t.y,
+                                vx: Math.cos(ang) * 13,
+                                vy: Math.sin(ang) * 13,
+                                radius: 4,
+                                color: '#34d399',
+                                damage: 9,
+                                fromPlayer: true,
+                                ownerId: t.ownerId,
+                                type: 'bullet',
+                                bounces: 0,
+                                life: 1.5
+                            });
+                        }
+                    }
+
+                    // Healing / Shield aura pulse
+                    if (t.pulseTimer <= 0) {
+                        t.pulseTimer = 2.5;
+                        this.spawnBurstParticles(t.x, t.y, '#10b981', 10);
+                        Object.values(this.players).forEach(p => {
+                            if (!p.downed && Math.hypot(p.x - t.x, p.y - t.y) < 170) {
+                                p.armor = Math.min(p.maxArmor, p.armor + 1);
+                            }
+                        });
+                    }
+
+                    if (t.life <= 0) this.turrets.splice(i, 1);
+                }
+
+                // 5. Update Enemies & Bosses
+                for (let i = this.enemies.length - 1; i >= 0; i--) {
+                    const e = this.enemies[i];
+                    if (e.stunTimer > 0) {
+                        e.stunTimer -= dt;
+                        continue;
+                    }
+                    const speedMult = e.chillTimer > 0 ? 0.5 : 1.0;
+                    if (e.chillTimer > 0) e.chillTimer -= dt;
+
+                    const targetHero = this.findNearestLivingHero(e.x, e.y);
+                    if (targetHero) {
+                        const dist = Math.hypot(targetHero.x - e.x, targetHero.y - e.y);
+                        const ang = Math.atan2(targetHero.y - e.y, targetHero.x - e.x);
+
+                        if (dist > (e.isBoss ? 150 : 110)) {
+                            this.moveEntityWithCollision(e, Math.cos(ang) * e.speed * speedMult, Math.sin(ang) * e.speed * speedMult);
+                        }
+
+                        e.fireTimer -= dt;
+                        if (e.fireTimer <= 0) {
+                            e.fireTimer = e.fireRate;
+                            this.enemyAttackPattern(e, ang);
+                        }
+                    }
+                }
+
+                // 6. Update Bullets & Projectiles
+                for (let i = this.bullets.length - 1; i >= 0; i--) {
+                    const b = this.bullets[i];
+                    b.x += b.vx;
+                    b.y += b.vy;
+                    b.life -= dt;
+
+                    if (b.life <= 0) {
+                        this.bullets.splice(i, 1);
+                        continue;
+                    }
+
+                    // Check wall/pillar bounce or destruction
+                    if (!this.isPointWalkable(b.x, b.y, b.radius)) {
+                        if (b.bounces > 0) {
+                            b.bounces--;
+                            b.vx = -b.vx;
+                            b.vy = -b.vy;
+                        } else {
+                            if (b.type === 'explosive') this.triggerExplosion(b.x, b.y, 85, b.damage);
+                            this.spawnBurstParticles(b.x, b.y, b.color, 5);
+                            this.bullets.splice(i, 1);
+                            continue;
+                        }
+                    }
+
+                    // Check Crate / Explosive Barrel hits
+                    let hitCrate = false;
+                    for (let cIdx = this.crates.length - 1; cIdx >= 0; cIdx--) {
+                        const cr = this.crates[cIdx];
+                        if (Math.abs(b.x - cr.x) < cr.size / 2 + b.radius && Math.abs(b.y - cr.y) < cr.size / 2 + b.radius) {
+                            if (!cr.indestructible) {
+                                cr.hp -= b.damage;
+                                if (cr.hp <= 0) {
+                                    if (cr.type === 'barrel') {
+                                        this.triggerExplosion(cr.x, cr.y, 130, 35);
+                                    } else {
+                                        this.spawnBurstParticles(cr.x, cr.y, '#a16207', 10);
+                                        if (Math.random() < 0.35) {
+                                            this.groundLoots.push({ x: cr.x, y: cr.y, kind: Math.random() < 0.5 ? 'potion_mana' : 'potion_hp' });
+                                        }
+                                    }
+                                    this.crates.splice(cIdx, 1);
+                                }
+                            }
+                            if (!b.pierce) {
+                                hitCrate = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (hitCrate) {
+                        this.bullets.splice(i, 1);
+                        continue;
+                    }
+
+                    // Player bullets hitting Enemies
+                    if (b.fromPlayer) {
+                        for (let eIdx = this.enemies.length - 1; eIdx >= 0; eIdx--) {
+                            const e = this.enemies[eIdx];
+                            if (Math.hypot(b.x - e.x, b.y - e.y) < e.radius + b.radius) {
+                                if (b.type === 'explosive') {
+                                    this.triggerExplosion(b.x, b.y, 95, b.damage);
+                                } else {
+                                    if (b.type === 'frost') e.chillTimer = 3.0;
+                                    this.damageEnemy(e, b.damage, this.players[b.ownerId]);
+                                }
+                                if (!b.pierce) {
+                                    this.bullets.splice(i, 1);
+                                    break;
+                                }
+                            }
+                        }
+                    } else {
+                        // Enemy bullets hitting Heroes
+                        for (const hero of Object.values(this.players)) {
+                            if (!hero.downed && hero.dashTimer <= 0 && Math.hypot(b.x - hero.x, b.y - hero.y) < hero.radius + b.radius - 3) {
+                                this.damageHero(hero, b.damage);
+                                this.bullets.splice(i, 1);
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                // 7. Update Particles & Floating Numbers
+                for (let i = this.particles.length - 1; i >= 0; i--) {
+                    const pt = this.particles[i];
+                    pt.x += pt.vx;
+                    pt.y += pt.vy;
+                    pt.life -= dt;
+                    if (pt.life <= 0) this.particles.splice(i, 1);
+                }
+                for (let i = this.floatingTexts.length - 1; i >= 0; i--) {
+                    const ft = this.floatingTexts[i];
+                    ft.y -= dt * 28;
+                    ft.life -= dt;
+                    if (ft.life <= 0) this.floatingTexts.splice(i, 1);
+                }
+
+                // Smooth Camera tracking local player
+                this.camera.x += (me.x - this.camera.x) * 0.14;
+                this.camera.y += (me.y - this.camera.y) * 0.14;
+
+                this.updateInteractivePrompts(me);
+                this.updateHud();
+            }
+
+            updateCompanionBot(bot, leader, dt) {
+                // 1. Prioritize reviving a downed teammate!
+                const downedAlly = Object.values(this.players).find(p => p.downed);
+                if (downedAlly) {
+                    const dist = Math.hypot(downedAlly.x - bot.x, downedAlly.y - bot.y);
+                    if (dist > 40) {
+                        const ang = Math.atan2(downedAlly.y - bot.y, downedAlly.x - bot.x);
+                        this.moveEntityWithCollision(bot, Math.cos(ang) * bot.speed, Math.sin(ang) * bot.speed);
+                    } else {
+                        downedAlly.reviveProgress += dt;
+                        if (downedAlly.reviveProgress >= 1.5) {
+                            downedAlly.reviveProgress = 0;
+                            downedAlly.downed = false;
+                            downedAlly.hp = Math.ceil(downedAlly.maxHp * 0.5);
+                            downedAlly.armor = downedAlly.maxArmor;
+                            this.addFloatingText(downedAlly.x, downedAlly.y - 30, `${bot.name} đã cứu!`, '#4ade80');
+                        }
+                    }
+                    return;
+                }
+
+                // 2. Follow leader into current room if far away
+                const distToLeader = Math.hypot(leader.x - bot.x, leader.y - bot.y);
+                const nearestEnemy = this.findNearestEnemy(bot.x, bot.y, 460);
+
+                if (distToLeader > 280) {
+                    const ang = Math.atan2(leader.y - bot.y, leader.x - bot.x);
+                    this.moveEntityWithCollision(bot, Math.cos(ang) * bot.speed * 1.15, Math.sin(ang) * bot.speed * 1.15);
+                    if (distToLeader > 680) {
+                        // Teleport bot next to leader if stuck behind locked room gate
+                        bot.x = leader.x + (Math.random() - 0.5) * 60;
+                        bot.y = leader.y + (Math.random() - 0.5) * 60;
+                    }
+                } else if (nearestEnemy) {
+                    const dEnemy = Math.hypot(nearestEnemy.x - bot.x, nearestEnemy.y - bot.y);
+                    bot.aimAngle = Math.atan2(nearestEnemy.y - bot.y, nearestEnemy.x - bot.x);
+
+                    // Strafe & keep optimal distance
+                    const strafeAngle = bot.aimAngle + (dEnemy < 150 ? Math.PI : Math.PI / 2);
+                    this.moveEntityWithCollision(bot, Math.cos(strafeAngle) * bot.speed * 0.75, Math.sin(strafeAngle) * bot.speed * 0.75);
+
+                    this.fireWeapon(bot);
+                    if (bot.skillCooldown <= 0 && Math.random() < 0.03) {
+                        this.triggerHeroSkill(bot);
+                    }
+                } else if (distToLeader > 95) {
+                    const ang = Math.atan2(leader.y - bot.y, leader.x - bot.x);
+                    this.moveEntityWithCollision(bot, Math.cos(ang) * bot.speed * 0.85, Math.sin(ang) * bot.speed * 0.85);
+                }
+            }
+
+            enemyAttackPattern(e, angleToTarget) {
+                if (e.isBoss) {
+                    e.patternIndex = (e.patternIndex + 1) % 3;
+                    if (e.patternIndex === 0) {
+                        // 12-way radial bullet hell ring
+                        for (let k = 0; k < 12; k++) {
+                            const a = (k / 12) * Math.PI * 2 + performance.now() * 0.001;
+                            this.bullets.push({
+                                x: e.x, y: e.y,
+                                vx: Math.cos(a) * 6.2, vy: Math.sin(a) * 6.2,
+                                radius: 7, color: '#fb7185', damage: 2, fromPlayer: false, life: 3.0
+                            });
+                        }
+                    } else if (e.patternIndex === 1) {
+                        // Rapid 5-spread aimed barrage
+                        for (let k = -2; k <= 2; k++) {
+                            const a = angleToTarget + k * 0.16;
+                            this.bullets.push({
+                                x: e.x, y: e.y,
+                                vx: Math.cos(a) * 8.5, vy: Math.sin(a) * 8.5,
+                                radius: 8, color: '#f97316', damage: 2, fromPlayer: false, life: 2.6
+                            });
+                        }
+                    } else {
+                        // Charge + Spiral Nova
+                        e.x += Math.cos(angleToTarget) * 35;
+                        e.y += Math.sin(angleToTarget) * 35;
+                        for (let k = 0; k < 8; k++) {
+                            const a = (k / 8) * Math.PI * 2;
+                            this.bullets.push({
+                                x: e.x, y: e.y,
+                                vx: Math.cos(a) * 7.2, vy: Math.sin(a) * 7.2,
+                                radius: 7, color: '#c084fc', damage: 2, fromPlayer: false, life: 2.8
+                            });
+                        }
+                    }
+                    return;
+                }
+
+                if (e.type === 'mage') {
+                    for (let k = -1; k <= 1; k++) {
+                        const a = angleToTarget + k * 0.25;
+                        this.bullets.push({
+                            x: e.x, y: e.y,
+                            vx: Math.cos(a) * 6.5, vy: Math.sin(a) * 6.5,
+                            radius: 6, color: '#f43f5e', damage: 1, fromPlayer: false, life: 2.4
+                        });
+                    }
+                } else {
+                    this.bullets.push({
+                        x: e.x, y: e.y,
+                        vx: Math.cos(angleToTarget) * 7.0, vy: Math.sin(angleToTarget) * 7.0,
+                        radius: 5, color: '#fb923c', damage: 1, fromPlayer: false, life: 2.2
+                    });
+                }
+            }
+
+            damageEnemy(enemy, amount, attacker) {
+                enemy.hp -= amount;
+                this.sfx.play('hit');
+                this.addFloatingText(enemy.x + (Math.random() - 0.5) * 18, enemy.y - 20, `-${amount}`, '#fde047');
+                this.spawnBurstParticles(enemy.x, enemy.y, enemy.color, 5);
+
+                if (enemy.hp <= 0) {
+                    const idx = this.enemies.indexOf(enemy);
+                    if (idx !== -1) this.enemies.splice(idx, 1);
+
+                    this.totalKills++;
+                    this.teamCoins += enemy.isBoss ? 50 : 4;
+                    this.spawnBurstParticles(enemy.x, enemy.y, enemy.color, enemy.isBoss ? 40 : 14);
+
+                    // Energy & Coin Orb restoration
+                    Object.values(this.players).forEach(p => {
+                        if (!p.downed) {
+                            p.energy = Math.min(p.maxEnergy, p.energy + (enemy.isBoss ? 80 : 12));
+                        }
+                    });
+
+                    // Vampire buff check
+                    if (attacker && this.activeBuffs?.has('vampire') && Math.random() < 0.35) {
+                        attacker.hp = Math.min(attacker.maxHp, attacker.hp + 1);
+                        this.addFloatingText(attacker.x, attacker.y - 28, '+1 MÁU', '#f43f5e');
+                    }
+
+                    if (enemy.isBoss) {
+                        document.getElementById('hudBossContainer').classList.add('hidden');
+                        this.screenShake = 14;
+                        this.sfx.play('explosion');
+                    }
+                }
+            }
+
+            damageHero(hero, dmg) {
+                hero.lastDamageTakenTime = performance.now() / 1000;
+                this.sfx.play('hit');
+                if (hero.isLocal) this.screenShake = 6;
+
+                if (hero.armor > 0) {
+                    const absorbed = Math.min(hero.armor, dmg);
+                    hero.armor -= absorbed;
+                    const rem = dmg - absorbed;
+                    if (rem > 0) hero.hp = Math.max(0, hero.hp - rem);
+                    this.addFloatingText(hero.x, hero.y - 25, `-${dmg} Giáp`, '#cbd5e1');
+                } else {
+                    hero.hp = Math.max(0, hero.hp - dmg);
+                    this.addFloatingText(hero.x, hero.y - 25, `-${dmg} Máu`, '#ef4444');
+                }
+
+                if (hero.hp <= 0 && !hero.downed) {
+                    hero.downed = true;
+                    this.addFloatingText(hero.x, hero.y - 32, 'GỤC NGÃ! CẦN CỨU!', '#ef4444');
+
+                    // Check if entire squad is wiped out
+                    const anyAlive = Object.values(this.players).some(p => !p.downed);
+                    if (!anyAlive) {
+                        this.showEndScreen(false);
+                    }
+                }
+            }
+
+            triggerExplosion(x, y, radius, damage) {
+                this.sfx.play('explosion');
+                this.screenShake = 10;
+                this.spawnBurstParticles(x, y, '#f97316', 28);
+
+                this.enemies.forEach(e => {
+                    if (Math.hypot(e.x - x, e.y - y) <= radius + e.radius) {
+                        this.damageEnemy(e, damage, null);
+                    }
+                });
+            }
+
+            // ------------------------------------------------------------------------
+            // ROOM STATE, COLLISIONS & WALKABILITY
+            // ------------------------------------------------------------------------
+            checkRoomState(me) {
+                const half = this.roomSize / 2 - 45;
+                for (const rm of this.rooms) {
+                    if (Math.abs(me.x - rm.x) < half && Math.abs(me.y - rm.y) < half) {
+                        this.currentRoomIndex = rm.index;
+                        rm.visited = true;
+
+                        // Pull teammates into combat room when wave starts
+                        if (!rm.cleared && !this.gatesLocked && (rm.type === 'combat' || rm.type === 'boss')) {
+                            Object.values(this.players).forEach(p => {
+                                if (p.id !== me.id) {
+                                    p.x = me.x + (Math.random() - 0.5) * 50;
+                                    p.y = me.y + (Math.random() - 0.5) * 50;
+                                }
+                            });
+                            this.triggerRoomWave(rm);
+                        }
+                        break;
+                    }
+                }
+
+                const curRoom = this.rooms[this.currentRoomIndex];
+                if (this.gatesLocked && this.enemies.length === 0) {
+                    if (curRoom.wave < curRoom.maxWaves) {
+                        this.triggerRoomWave(curRoom);
+                    } else {
+                        // Room Cleared!
+                        curRoom.cleared = true;
+                        this.gatesLocked = false;
+                        this.sfx.play('pickup');
+
+                        const banner = document.getElementById('hudRoomTitle');
+                        const dot = document.getElementById('hudRoomStateDot');
+                        dot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-400';
+                        banner.textContent = `${curRoom.name} • ĐÃ DỌN SẠCH!`;
+
+                        // Spawn reward chest
+                        this.chests.push({
+                            id: 'chest_clear_' + curRoom.index,
+                            x: curRoom.x,
+                            y: curRoom.y,
+                            opened: false,
+                            tier: curRoom.type === 'boss' ? 'gold' : 'normal'
+                        });
+
+                        // If Boss room cleared, spawn Dimensional Portal!
+                        if (curRoom.type === 'boss') {
+                            this.portal = { x: curRoom.x, y: curRoom.y - 140, angle: 0 };
+                            this.addFloatingText(curRoom.x, curRoom.y - 165, 'CỔNG DỊCH CHUYỂN MỞ!', '#c084fc');
+                        }
+                    }
+                }
+            }
+
+            isPointWalkable(x, y, radius = 14) {
+                const half = this.roomSize / 2 - radius;
+                const corrHalf = this.corridorWidth / 2 - radius;
+
+                // 1. Check inside any room
+                for (const rm of this.rooms) {
+                    if (Math.abs(x - rm.x) <= half && Math.abs(y - rm.y) <= half) {
+                        return true;
+                    }
+                }
+
+                // 2. If gates are locked during combat, corridors are sealed!
+                if (this.gatesLocked) return false;
+
+                // 3. Check corridors between neighboring rooms
+                for (const rm of this.rooms) {
+                    for (const nbIdx of rm.neighbors) {
+                        if (nbIdx < rm.index) continue;
+                        const nb = this.rooms[nbIdx];
+                        if (rm.y === nb.y) {
+                            // Horizontal corridor
+                            const minX = Math.min(rm.x, nb.x);
+                            const maxX = Math.max(rm.x, nb.x);
+                            if (x >= minX && x <= maxX && Math.abs(y - rm.y) <= corrHalf) return true;
+                        } else if (rm.x === nb.x) {
+                            // Vertical corridor
+                            const minY = Math.min(rm.y, nb.y);
+                            const maxY = Math.max(rm.y, nb.y);
+                            if (y >= minY && y <= maxY && Math.abs(x - rm.x) <= corrHalf) return true;
+                        }
+                    }
+                }
+                return false;
+            }
+
+            moveEntityWithCollision(ent, dx, dy) {
+                const nextX = ent.x + dx;
+                if (this.isPointWalkable(nextX, ent.y, ent.radius) && !this.hitsObstacle(nextX, ent.y, ent.radius)) {
+                    ent.x = nextX;
+                }
+                const nextY = ent.y + dy;
+                if (this.isPointWalkable(ent.x, nextY, ent.radius) && !this.hitsObstacle(ent.x, nextY, ent.radius)) {
+                    ent.y = nextY;
+                }
+            }
+
+            hitsObstacle(x, y, radius) {
+                for (const cr of this.crates) {
+                    const half = cr.size / 2 + radius - 2;
+                    if (Math.abs(x - cr.x) < half && Math.abs(y - cr.y) < half) return true;
+                }
+                return false;
+            }
+
+            findNearestEnemy(x, y, maxDist) {
+                let best = null;
+                let bestDist = maxDist;
+                for (const e of this.enemies) {
+                    const d = Math.hypot(e.x - x, e.y - y);
+                    if (d < bestDist) {
+                        bestDist = d;
+                        best = e;
+                    }
+                }
+                return best;
+            }
+
+            findNearestLivingHero(x, y) {
+                let best = null;
+                let bestDist = Infinity;
+                for (const p of Object.values(this.players)) {
+                    if (p.downed) continue;
+                    const d = Math.hypot(p.x - x, p.y - y);
+                    if (d < bestDist) {
+                        bestDist = d;
+                        best = p;
+                    }
+                }
+                return best;
+            }
+
+            // ------------------------------------------------------------------------
+            // RENDERING ENGINE (SOUL KNIGHT PIXEL-ART DUNGEON STYLE)
+            // ------------------------------------------------------------------------
+            render() {
+                const w = this.canvas.width;
+                const h = this.canvas.height;
+                const ctx = this.ctx;
+
+                ctx.fillStyle = '#090c14';
+                ctx.fillRect(0, 0, w, h);
+
+                ctx.save();
+                const shakeX = (Math.random() - 0.5) * this.screenShake;
+                const shakeY = (Math.random() - 0.5) * this.screenShake;
+                ctx.translate(w / 2 - this.camera.x + shakeX, h / 2 - this.camera.y + shakeY);
+
+                // 1. Draw Corridors
+                this.rooms.forEach(rm => {
+                    rm.neighbors.forEach(nbIdx => {
+                        if (nbIdx < rm.index) return;
+                        const nb = this.rooms[nbIdx];
+                        ctx.fillStyle = '#1e293b';
+                        ctx.strokeStyle = '#475569';
+                        ctx.lineWidth = 8;
+                        if (rm.y === nb.y) {
+                            const startX = Math.min(rm.x, nb.x) + this.roomSize / 2;
+                            const len = Math.abs(nb.x - rm.x) - this.roomSize;
+                            ctx.fillRect(startX, rm.y - this.corridorWidth / 2, len, this.corridorWidth);
+                            ctx.strokeRect(startX, rm.y - this.corridorWidth / 2, len, this.corridorWidth);
+                        } else {
+                            const startY = Math.min(rm.y, nb.y) + this.roomSize / 2;
+                            const len = Math.abs(nb.y - rm.y) - this.roomSize;
+                            ctx.fillRect(rm.x - this.corridorWidth / 2, startY, this.corridorWidth, len);
+                            ctx.strokeRect(rm.x - this.corridorWidth / 2, startY, this.corridorWidth, len);
+                        }
+                    });
+                });
+
+                // 2. Draw Dungeon Rooms & Stone Tiles
+                this.rooms.forEach(rm => {
+                    const left = rm.x - this.roomSize / 2;
+                    const top = rm.y - this.roomSize / 2;
+
+                    // Floor base
+                    ctx.fillStyle = rm.type === 'boss' ? '#1f1224' : rm.type === 'treasure' ? '#1c2430' : '#182030';
+                    ctx.fillRect(left, top, this.roomSize, this.roomSize);
+
+                    // Checkerboard Dungeon Tile pattern
+                    const tile = 64;
+                    ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+                    ctx.lineWidth = 2;
+                    for (let tx = left; tx < left + this.roomSize; tx += tile) {
+                        ctx.beginPath();
+                        ctx.moveTo(tx, top);
+                        ctx.lineTo(tx, top + this.roomSize);
+                        ctx.stroke();
+                    }
+                    for (let ty = top; ty < top + this.roomSize; ty += tile) {
+                        ctx.beginPath();
+                        ctx.moveTo(left, ty);
+                        ctx.lineTo(left + this.roomSize, ty);
+                        ctx.stroke();
+                    }
+
+                    // Thick outer stone wall
+                    ctx.strokeStyle = rm.type === 'boss' ? '#991b1b' : '#475569';
+                    ctx.lineWidth = 14;
+                    ctx.strokeRect(left, top, this.roomSize, this.roomSize);
+
+                    // Locked Iron Gates during Combat Waves
+                    if (this.gatesLocked && rm.index === this.currentRoomIndex) {
+                        ctx.fillStyle = '#dc2626';
+                        ctx.fillRect(rm.x - 70, top - 8, 140, 16);
+                        ctx.fillRect(rm.x - 70, top + this.roomSize - 8, 140, 16);
+                        ctx.fillRect(left - 8, rm.y - 70, 16, 140);
+                        ctx.fillRect(left + this.roomSize - 8, rm.y - 70, 16, 140);
+                    }
+                });
+
+                // 3. Draw Dimensional Portal (if Boss defeated)
+                if (this.portal) {
+                    this.portal.angle += 0.05;
+                    ctx.save();
+                    ctx.translate(this.portal.x, this.portal.y);
+                    ctx.rotate(this.portal.angle);
+                    const grad = ctx.createRadialGradient(0, 0, 6, 0, 0, 44);
+                    grad.addColorStop(0, '#f0abfc');
+                    grad.addColorStop(0.6, '#9333ea');
+                    grad.addColorStop(1, 'rgba(88, 28, 135, 0)');
+                    ctx.fillStyle = grad;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 44, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.strokeStyle = '#e879f9';
+                    ctx.lineWidth = 3;
+                    ctx.strokeRect(-24, -24, 48, 48);
+                    ctx.restore();
+                }
+
+                // 4. Draw Crates, Barrels & Stone Pillars
+                this.crates.forEach(cr => {
+                    const hs = cr.size / 2;
+                    if (cr.type === 'pillar') {
+                        ctx.fillStyle = '#334155';
+                        ctx.strokeStyle = '#64748b';
+                        ctx.lineWidth = 3;
+                        ctx.fillRect(cr.x - hs, cr.y - hs, cr.size, cr.size);
+                        ctx.strokeRect(cr.x - hs, cr.y - hs, cr.size, cr.size);
+                    } else if (cr.type === 'barrel') {
+                        ctx.fillStyle = '#dc2626';
+                        ctx.strokeStyle = '#fca5a5';
+                        ctx.lineWidth = 2;
+                        ctx.beginPath();
+                        ctx.arc(cr.x, cr.y, hs, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.stroke();
+                        ctx.fillStyle = '#fef08a';
+                        ctx.font = 'bold 11px sans-serif';
+                        ctx.textAlign = 'center';
+                        ctx.fillText('TNT', cr.x, cr.y + 4);
+                    } else {
+                        ctx.fillStyle = '#854d0e';
+                        ctx.strokeStyle = '#ca8a04';
+                        ctx.lineWidth = 2;
+                        ctx.fillRect(cr.x - hs, cr.y - hs, cr.size, cr.size);
+                        ctx.strokeRect(cr.x - hs, cr.y - hs, cr.size, cr.size);
+                    }
+                });
+
+                // 5. Draw Treasure Chests & Ground Loot
+                this.chests.forEach(c => {
+                    ctx.fillStyle = c.opened ? '#475569' : (c.tier === 'gold' ? '#eab308' : '#b45309');
+                    ctx.strokeStyle = '#fef08a';
+                    ctx.lineWidth = 2;
+                    ctx.fillRect(c.x - 22, c.y - 16, 44, 32);
+                    ctx.strokeRect(c.x - 22, c.y - 16, 44, 32);
+                });
+
+                this.groundLoots.forEach(item => {
+                    ctx.save();
+                    ctx.translate(item.x, item.y);
+                    ctx.fillStyle = item.kind === 'weapon' ? '#f59e0b' : item.kind === 'potion_hp' ? '#f43f5e' : '#38bdf8';
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 12, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.fillStyle = '#fff';
+                    ctx.font = 'bold 11px sans-serif';
+                    ctx.textAlign = 'center';
+                    const label = item.kind === 'weapon' ? WEAPONS[item.weaponId].name : item.kind === 'potion_hp' ? 'Bình Máu' : 'Bình Mana';
+                    ctx.fillText(label, 0, -16);
+                    ctx.restore();
+                });
+
+                // 6. Draw Engineer Turrets
+                this.turrets.forEach(t => {
+                    ctx.save();
+                    ctx.translate(t.x, t.y);
+                    ctx.strokeStyle = 'rgba(16, 185, 129, 0.25)';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 160, 0, Math.PI * 2);
+                    ctx.stroke();
+
+                    ctx.fillStyle = '#10b981';
+                    ctx.fillRect(-13, -13, 26, 26);
+                    ctx.strokeStyle = '#a7f3d0';
+                    ctx.strokeRect(-13, -13, 26, 26);
+                    ctx.restore();
+                });
+
+                // 7. Draw Auto-Aim Target Reticle under Locked Enemy
+                if (this.lockedEnemy && this.enemies.includes(this.lockedEnemy)) {
+                    ctx.save();
+                    ctx.translate(this.lockedEnemy.x, this.lockedEnemy.y);
+                    ctx.strokeStyle = '#ef4444';
+                    ctx.lineWidth = 2.5;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, this.lockedEnemy.radius + 9, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.restore();
+                }
+
+                // 8. Draw Enemies & Bosses
+                this.enemies.forEach(e => {
+                    ctx.save();
+                    ctx.translate(e.x, e.y);
+
+                    // Body
+                    ctx.fillStyle = e.stunTimer > 0 ? '#fde047' : e.chillTimer > 0 ? '#60a5fa' : e.color;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, e.radius, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.lineWidth = 3;
+                    ctx.strokeStyle = '#0f172a';
+                    ctx.stroke();
+
+                    // Eyes
+                    ctx.fillStyle = '#0f172a';
+                    ctx.fillRect(-6, -4, 4, 4);
+                    ctx.fillRect(3, -4, 4, 4);
+
+                    // Mini HP bar above enemy
+                    if (!e.isBoss && e.hp < e.maxHp) {
+                        ctx.fillStyle = '#0f172a';
+                        ctx.fillRect(-18, -e.radius - 11, 36, 5);
+                        ctx.fillStyle = '#ef4444';
+                        ctx.fillRect(-18, -e.radius - 11, 36 * (e.hp / e.maxHp), 5);
+                    }
+                    ctx.restore();
+                });
+
+                // 9. Draw Squad Heroes (Up to 4 Players)
+                Object.values(this.players).forEach(p => {
+                    ctx.save();
+                    ctx.translate(p.x, p.y);
+
+                    // Downed state circle
+                    if (p.downed) {
+                        ctx.strokeStyle = '#ef4444';
+                        ctx.lineWidth = 3;
+                        ctx.beginPath();
+                        ctx.arc(0, 0, 28, 0, Math.PI * 2);
+                        ctx.stroke();
+                        ctx.fillStyle = '#fca5a5';
+                        ctx.font = 'bold 11px sans-serif';
+                        ctx.textAlign = 'center';
+                        ctx.fillText('CẦN CỨU [E]', 0, -34);
+                    }
+
+                    // Active Skill Aura (Knight Dual Wield / Assassin Dash)
+                    if (p.skillActiveTimer > 0) {
+                        ctx.strokeStyle = p.color;
+                        ctx.lineWidth = 3;
+                        ctx.beginPath();
+                        ctx.arc(0, 0, p.radius + 7, 0, Math.PI * 2);
+                        ctx.stroke();
+                    }
+
+                    // Chibi Soul Knight Hero Sprite
+                    ctx.fillStyle = p.downed ? '#64748b' : p.color;
+                    ctx.strokeStyle = '#0f172a';
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    ctx.roundRect(-15, -16, 30, 32, 8);
+                    ctx.fill();
+                    ctx.stroke();
+
+                    // Knight/Hero Visor & Eyes
+                    ctx.fillStyle = '#0f172a';
+                    ctx.fillRect(-10, -7, 20, 9);
+                    ctx.fillStyle = p.visorColor;
+                    ctx.fillRect(-7, -5, 5, 5);
+                    ctx.fillRect(2, -5, 5, 5);
+
+                    // Held Weapon & Melee Slash Arc
+                    if (!p.downed) {
+                        ctx.save();
+                        ctx.rotate(p.aimAngle);
+                        const wep = WEAPONS[p.weapons[p.activeWeaponIdx] || 'pistol'];
+
+                        if (p.meleeSwingTimer > 0) {
+                            ctx.strokeStyle = wep.color;
+                            ctx.lineWidth = 6;
+                            ctx.beginPath();
+                            ctx.arc(0, 0, wep.size, -0.9, 0.9);
+                            ctx.stroke();
+                        }
+
+                        ctx.fillStyle = wep.color;
+                        ctx.fillRect(12, -4, 16, 8);
+                        if (p.heroClass === 'knight' && p.skillActiveTimer > 0) {
+                            ctx.fillRect(12, 7, 16, 8);
+                        }
+                        ctx.restore();
+                    }
+
+                    // Player Name Tag
+                    ctx.fillStyle = p.isLocal ? '#fde047' : '#e2e8f0';
+                    ctx.font = 'bold 11px Chakra Petch, sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(p.name, 0, -24);
+
+                    ctx.restore();
+                });
+
+                // 10. Draw Projectiles & Lasers
+                this.bullets.forEach(b => {
+                    ctx.save();
+                    if (b.type === 'laser') {
+                        ctx.strokeStyle = b.color;
+                        ctx.lineWidth = 6;
+                        ctx.beginPath();
+                        ctx.moveTo(b.x, b.y);
+                        ctx.lineTo(b.x - b.vx * 2.5, b.y - b.vy * 2.5);
+                        ctx.stroke();
+                    } else {
+                        ctx.fillStyle = b.color;
+                        ctx.beginPath();
+                        ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                    ctx.restore();
+                });
+
+                // 11. Draw Particles & Floating Damage Numbers
+                this.particles.forEach(pt => {
+                    ctx.fillStyle = pt.color;
+                    ctx.globalAlpha = Math.max(0, pt.life * 2);
+                    ctx.fillRect(pt.x - 3, pt.y - 3, 6, 6);
+                });
+                ctx.globalAlpha = 1;
+
+                this.floatingTexts.forEach(ft => {
+                    ctx.font = '900 14px Chakra Petch, sans-serif';
+                    ctx.fillStyle = ft.color;
+                    ctx.textAlign = 'center';
+                    ctx.fillText(ft.text, ft.x, ft.y);
+                });
+
+                ctx.restore();
+
+                // 12. Render Minimap
+                this.renderMinimap();
+            }
+
+            renderMinimap() {
+                const mctx = this.minimapCtx;
+                const mw = this.minimapCanvas.width;
+                const mh = this.minimapCanvas.height;
+                mctx.clearRect(0, 0, mw, mh);
+
+                const scale = 0.022;
+                const offsetX = 24;
+                const offsetY = 52;
+
+                this.rooms.forEach(rm => {
+                    const rx = offsetX + rm.x * scale;
+                    const ry = offsetY + rm.y * scale;
+                    mctx.fillStyle = rm.index === this.currentRoomIndex
+                        ? '#f59e0b'
+                        : rm.cleared
+                            ? '#10b981'
+                            : rm.type === 'boss'
+                                ? '#ef4444'
+                                : '#475569';
+                    mctx.fillRect(rx - 8, ry - 8, 16, 16);
+                });
+            }
+
+            renderBackgroundPreview(t) {
+                const ctx = this.ctx;
+                ctx.fillStyle = '#0b0f19';
+                ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+            }
+
+            // ------------------------------------------------------------------------
+            // HUD UPDATES & END SCREEN
+            // ------------------------------------------------------------------------
+            updateInteractivePrompts(me) {
+                const promptEl = document.getElementById('hudInteractPrompt');
+                const btnInteract = document.getElementById('btnInteract');
+                let text = null;
+
+                for (const p of Object.values(this.players)) {
+                    if (p.id !== me.id && p.downed && Math.hypot(p.x - me.x, p.y - me.y) < 75) {
+                        text = `[E] Cứu sống ${p.name}`;
+                        break;
+                    }
+                }
+                if (!text) {
+                    for (const c of this.chests) {
+                        if (!c.opened && Math.hypot(c.x - me.x, c.y - me.y) < 75) {
+                            text = `[E] Mở Rương Kho Báu`;
+                            break;
+                        }
+                    }
+                }
+                if (!text) {
+                    for (const item of this.groundLoots) {
+                        if (Math.hypot(item.x - me.x, item.y - me.y) < 68) {
+                            const label = item.kind === 'weapon' ? WEAPONS[item.weaponId].name : item.kind === 'potion_hp' ? 'Bình Máu' : 'Bình Mana';
+                            text = `[E] Nhặt ${label}`;
+                            break;
+                        }
+                    }
+                }
+                if (!text && this.portal && Math.hypot(this.portal.x - me.x, this.portal.y - me.y) < 80) {
+                    text = `[E] Vào Cổng Dịch Chuyển (Qua Tầng Mới)`;
+                }
+
+                if (text) {
+                    promptEl.textContent = text;
+                    promptEl.classList.remove('hidden');
+                    btnInteract.classList.remove('hidden');
+                } else {
+                    promptEl.classList.add('hidden');
+                    btnInteract.classList.add('hidden');
+                }
+            }
+
+            updateHud() {
+                const me = this.players[this.localId];
+                if (!me) return;
+
+                document.getElementById('hudPlayerName').textContent = me.name;
+                document.getElementById('hudCoins').textContent = this.teamCoins;
+
+                document.getElementById('hudHpBar').style.width = `${(me.hp / me.maxHp) * 100}%`;
+                document.getElementById('hudHpText').textContent = `${me.hp}/${me.maxHp}`;
+
+                document.getElementById('hudArmorBar').style.width = `${(me.armor / me.maxArmor) * 100}%`;
+                document.getElementById('hudArmorText').textContent = `${me.armor}/${me.maxArmor}`;
+
+                document.getElementById('hudEnergyBar').style.width = `${(me.energy / me.maxEnergy) * 100}%`;
+                document.getElementById('hudEnergyText').textContent = `${Math.floor(me.energy)}/${me.maxEnergy}`;
+
+                // Active Weapon Info
+                const activeWep = WEAPONS[me.weapons[me.activeWeaponIdx] || 'pistol'];
+                const secWep = me.weapons[me.activeWeaponIdx === 0 ? 1 : 0];
+                document.getElementById('hudWeaponName').textContent = activeWep.name;
+                document.getElementById('hudWeaponCost').textContent = activeWep.cost;
+                document.getElementById('hudSecondaryWeapon').textContent = secWep ? `Phụ: ${WEAPONS[secWep].name}` : 'Phụ: Trống';
+
+                // Skill Cooldown
+                const cdOverlay = document.getElementById('hudSkillCooldownOverlay');
+                const skillPct = (me.skillCooldown / me.maxSkillCd) * 100;
+                cdOverlay.style.height = `${skillPct}%`;
+                document.getElementById('hudSkillLabel').textContent = me.skillCooldown > 0 ? `${me.skillCooldown.toFixed(1)}s` : 'Kỹ Năng [K]';
+
+                // Boss HP Bar
+                const boss = this.enemies.find(e => e.isBoss);
+                if (boss) {
+                    document.getElementById('hudBossHpText').textContent = `${boss.hp} / ${boss.maxHp}`;
+                    document.getElementById('hudBossBar').style.width = `${(boss.hp / boss.maxHp) * 100}%`;
+                }
+
+                // Squad Sidebar (All 4 Players)
+                const squadEl = document.getElementById('hudSquadList');
+                squadEl.innerHTML = '';
+                Object.values(this.players).forEach(p => {
+                    if (p.id === me.id) return;
+                    const cls = HERO_CLASSES[p.heroClass] || HERO_CLASSES.knight;
+                    const div = document.createElement('div');
+                    div.className = 'sk-panel rounded-lg px-2 py-1.5 bg-slate-900/85 flex items-center justify-between gap-2';
+                    div.innerHTML = `
+                        <div class="flex items-center gap-1.5 min-w-0">
+                            <div class="w-5 h-5 rounded flex items-center justify-center text-slate-950 text-[10px] font-bold shrink-0" style="background:${cls.color}">
+                                <i class="fa-solid ${cls.icon}"></i>
+                            </div>
+                            <span class="text-[11px] font-bold text-slate-200 truncate">${p.name}</span>
+                        </div>
+                        <div class="flex items-center gap-1.5 shrink-0 text-[10px] font-bold">
+                            ${p.downed
+                                ? '<span class="text-red-400 animate-pulse">HẤP HỐI</span>'
+                                : `<span class="text-rose-400"><i class="fa-solid fa-heart"></i> ${p.hp}</span>
+                                   <span class="text-sky-300"><i class="fa-solid fa-shield"></i> ${p.armor}</span>`
+                            }
+                        </div>
+                    `;
+                    squadEl.appendChild(div);
+                });
+            }
+
+            showEndScreen(victory) {
+                this.inGame = false;
+                const modal = document.getElementById('endModal');
+                const title = document.getElementById('endModalTitle');
+                const desc = document.getElementById('endModalDesc');
+
+                title.textContent = victory ? 'Chiến Thắng Huy Hoàng!' : 'Tổ Đội Đã Gục Ngã!';
+                title.className = `text-2xl font-black uppercase mb-1 ${victory ? 'text-amber-300' : 'text-red-400'}`;
+                desc.textContent = victory
+                    ? 'Tổ đội 4 người của bạn đã quét sạch hầm ngục và đánh bại mọi Đại Boss!'
+                    : 'Đừng nản lòng! Hãy tập hợp lại đội hình hoặc chọn anh hùng khác để phục thù!';
+
+                document.getElementById('endStatFloor').textContent = `${this.floorLevel}-1`;
+                document.getElementById('endStatKills').textContent = this.totalKills;
+                document.getElementById('endStatCoins').textContent = this.teamCoins;
+                modal.classList.remove('hidden');
+            }
+
+            restartExpedition() {
+                this.launchExpedition(true);
+            }
+
+            returnToLobby() {
+                this.inGame = false;
+                document.getElementById('hudOverlay').classList.add('hidden');
+                document.getElementById('endModal').classList.add('hidden');
+                document.getElementById('buffModal').classList.add('hidden');
+                document.getElementById('lobbyModal').classList.remove('hidden');
+            }
+
+            toggleSound() {
+                this.sfx.enabled = !this.sfx.enabled;
+                const btn = document.getElementById('btnSoundToggle');
+                btn.innerHTML = this.sfx.enabled
+                    ? '<i class="fa-solid fa-volume-high text-emerald-400"></i> Âm'
+                    : '<i class="fa-solid fa-volume-xmark text-red-400"></i> Tắt';
+            }
+
+            // ------------------------------------------------------------------------
+            // PARTICLE EFFECTS & HELPERS
+            // ------------------------------------------------------------------------
+            spawnBurstParticles(x, y, color, count = 10) {
+                for (let i = 0; i < count; i++) {
+                    const ang = Math.random() * Math.PI * 2;
+                    const spd = 1 + Math.random() * 5;
+                    this.particles.push({
+                        x, y,
+                        vx: Math.cos(ang) * spd,
+                        vy: Math.sin(ang) * spd,
+                        color,
+                        life: 0.25 + Math.random() * 0.35
+                    });
+                }
+            }
+
+            spawnLightningArc(x1, y1, x2, y2) {
+                const steps = 8;
+                for (let i = 0; i <= steps; i++) {
+                    const t = i / steps;
+                    this.particles.push({
+                        x: x1 + (x2 - x1) * t + (Math.random() - 0.5) * 14,
+                        y: y1 + (y2 - y1) * t + (Math.random() - 0.5) * 14,
+                        vx: 0,
+                        vy: 0,
+                        color: '#38bdf8',
+                        life: 0.32
+                    });
+                }
+            }
+
+            addFloatingText(x, y, text, color = '#fff') {
+                this.floatingTexts.push({ x, y, text, color, life: 0.75 });
+            }
+
+            // ------------------------------------------------------------------------
+            // INPUT LISTENERS (PC KEYBOARD/MOUSE + MOBILE TOUCH JOYSTICK)
+            // ------------------------------------------------------------------------
+            initResize() {
+                const resize = () => {
+                    this.canvas.width = window.innerWidth;
+                    this.canvas.height = window.innerHeight;
+                };
+                window.addEventListener('resize', resize);
+                resize();
+            }
+
+            initInputs() {
+                window.addEventListener('keydown', (e) => {
+                    this.keys[e.code] = true;
+                    if (!this.inGame) return;
+                    if (e.code === 'KeyQ') this.swapWeapon();
+                    if (e.code === 'KeyK') this.useSkill();
+                    if (e.code === 'KeyE') this.triggerInteract();
+                });
+
+                window.addEventListener('keyup', (e) => {
+                    this.keys[e.code] = false;
+                });
+
+                this.canvas.addEventListener('mousemove', (e) => {
+                    this.mouse.x = e.clientX;
+                    this.mouse.y = e.clientY;
+                    this.mouse.worldX = e.clientX - this.canvas.width / 2 + this.camera.x;
+                    this.mouse.worldY = e.clientY - this.canvas.height / 2 + this.camera.y;
+                });
+
+                this.canvas.addEventListener('mousedown', (e) => {
+                    if (e.button === 0) this.mouse.down = true;
+                    if (e.button === 2 && this.inGame) this.useSkill();
+                });
+
+                window.addEventListener('mouseup', () => {
+                    this.mouse.down = false;
+                });
+
+                window.addEventListener('contextmenu', (e) => e.preventDefault());
+
+                // Virtual Touch Joystick
+                const joyZone = document.getElementById('joystickZone');
+                const joyKnob = document.getElementById('joystickKnob');
+
+                const handleJoyMove = (clientX, clientY) => {
+                    const rect = joyZone.getBoundingClientRect();
+                    const cx = rect.left + rect.width / 2;
+                    const cy = rect.top + rect.height / 2;
+                    const maxR = rect.width / 2 - 16;
+                    let dx = clientX - cx;
+                    let dy = clientY - cy;
+                    const dist = Math.hypot(dx, dy);
+                    if (dist > maxR) {
+                        dx = (dx / dist) * maxR;
+                        dy = (dy / dist) * maxR;
+                    }
+                    joyKnob.style.transform = `translate(${dx}px, ${dy}px)`;
+                    this.joy.dx = dx / maxR;
+                    this.joy.dy = dy / maxR;
+                };
+
+                joyZone.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    this.joy.active = true;
+                    handleJoyMove(e.touches[0].clientX, e.touches[0].clientY);
+                }, { passive: false });
+
+                joyZone.addEventListener('touchmove', (e) => {
+                    e.preventDefault();
+                    if (this.joy.active) handleJoyMove(e.touches[0].clientX, e.touches[0].clientY);
+                }, { passive: false });
+
+                const resetJoy = () => {
+                    this.joy.active = false;
+                    this.joy.dx = 0;
+                    this.joy.dy = 0;
+                    joyKnob.style.transform = `translate(0px, 0px)`;
+                };
+                joyZone.addEventListener('touchend', resetJoy);
+                joyZone.addEventListener('touchcancel', resetJoy);
+
+                // Holdable Fire Button for Mobile & Mouse
+                const btnFire = document.getElementById('btnFire');
+                btnFire.addEventListener('touchstart', (e) => { e.preventDefault(); this.touchFiring = true; }, { passive: false });
+                btnFire.addEventListener('touchend', () => { this.touchFiring = false; });
+                btnFire.addEventListener('mousedown', () => { this.touchFiring = true; });
+                btnFire.addEventListener('mouseup', () => { this.touchFiring = false; });
+            }
+        }
+
+        window.onload = function () {
+            window.gameApp = new SoulKnightGame();
+        };
+    </script>
+</body>
+</html>
